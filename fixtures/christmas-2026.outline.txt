@@ -1,0 +1,42 @@
+# Christmas 2026 (example plan, not as-built)
+O01 Front porch outlet @15A GFCI
+  K01 Kasa 2-port smart plug
+    left: C01 green cord 25ft
+      S01 4-way splitter
+        1: Roofline C9 warm white, front  x2  350W [roofline]
+        2: Roofline C9 warm white, garage  175W [roofline]
+        3: Wreaths with mini lights  x2  48W [porch]
+        4: Unused socket
+    right: S02 green 3-way yard stake
+      1: Candy cane pathway lights  x8  64W [pathway]
+      2: Inflatable snowman  150W [yard] [new]
+      3: C02 black cord 15ft
+        Light-up reindeer  x3  90W [yard]
+
+O02 Garage-side outlet @20A
+  K02 Kasa smart plug, dusk to 11pm
+    C03 green cord 40ft
+      P01 Pixel power supply 5V 350W
+        Pixel tree, 400 pixels [tree] [new]
+  C04 white cord 10ft
+    P02 WLED ESP32 controller
+      ~WiFi Pixel tree, 400 pixels
+
+O03 Back porch outlet
+  T01 Projector tote
+    S03 3-way splitter
+      1: Epson 880 projector  230W
+      2: Micca media player
+      3: Tote fan  10W
+
+# Indoor windows
+Living room outlet
+  K03 Kasa smart plug
+    S04 power strip
+      Front window projector  200W
+      Fire TV stick
+        ~HDMI Front window projector
+      Tree mini lights  x6  120W [tree]
+Upstairs window outlet
+  K04 Smart plug / AGPTEK
+    ~HDMI Dukane 8120WIA
