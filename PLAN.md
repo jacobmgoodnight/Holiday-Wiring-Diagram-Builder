@@ -10,14 +10,14 @@ and install/teardown.
 ## Architecture
 
 ```
-            ┌──────────── outline text (CodeMirror-free textarea + gutter) ───────────┐
+            ┌──────────── outline text (plain textarea + gutter overlay) ─────────────┐
  typing ──► │ parseOutline(text) ─► buildDisplay(parsed, previous) ─► Display model   │
             └────────────────────────────────────────────────────────────▲──────────┘
                                                                           │
  tapping ─► diagram actions (pure functions: plugInto, unplug, ...) ─────┘
                                                                           │
             Display model ─► serializeOutline(model) ─► outline text (unchanged lines kept verbatim)
-            Display model ─► layout (dagre) ─► React Flow diagram
+            Display model ─► layout (tidy tree) ─► React Flow diagram + SVG/PNG export
             Display model ─► loads.ts (roll-ups, badges)  ─► Needs-attention view
             Display model ─► Dexie (IndexedDB) + restore points + JSON/CSV export
 ```
@@ -91,8 +91,8 @@ and install/teardown.
 
 | # | Scope | Done when |
 |---|---|---|
-| 0 | Scaffold, CI, Pages workflow, model types, parser/builder/serializer, tests | Halloween fixture parses to the expected node and link counts and round-trips byte-for-byte |
-| 1 | Live split view (stacked on phone), dagre layout, outlet clusters, kind colours, socket labels, PNG/SVG export, inline error gutter, IndexedDB autosave, offline shell | Fixture renders recognisably like the Halloween diagram |
+| 0 ✅ | Scaffold, CI, Pages workflow, model types, parser/builder/serializer, tests | Halloween fixture parses to the expected node and link counts and round-trips byte-for-byte |
+| 1 ✅ | Live split view (stacked on phone), tree layout, outlet clusters, kind colours, socket labels, PNG/SVG export, inline error gutter, IndexedDB autosave, offline shell | Fixture renders recognisably like the Halloween diagram |
 | 2 | "+" on nodes/sockets, icon picker (Recent/Favorites/search), node panel, drag to re-plug, two-way sync, undo/redo (50+) | O02 branch rebuilt with taps only in < 1 min at phone size (Playwright) |
 | 3 | Load roll-ups, 80 % circuit badges, shared circuits, rating warnings, pixel helper, Needs-attention view | Fixture + Christmas fixture show correct estimates |
 | 4 | Field mode checklist, statuses, restore points, copy-from-last-year, tags, new-this-year | |
@@ -115,6 +115,27 @@ and install/teardown.
 * **D6. No PWA plugin.** A ~40-line service worker instead of adding `vite-plugin-pwa`.
 * **D7. `@types/node`** added as a dev dependency (types only) for the Vite config and for
   tests that read fixture files.
+* **D8. No dagre.** It reordered sibling sockets to reduce crossings, so socket 1 could land
+  below socket 3. A power tree needs no crossing minimisation: a ~40-line tidy-tree layout
+  keeps outline order exactly and is deterministic. Dependency removed.
+* **D9. Phones open one outlet at a time; desktops open Overall.** Fit never zooms below
+  0.9, so text stays readable; you pan instead of squinting. When the view is too tall it
+  opens on the outlet.
+* **D10. Export is drawn from the layout**, not screenshotted, so SVG/PNG need no extra
+  library and always look the same (light, print-friendly, with the planning note).
+* **D11. Crash-recovery copy.** Each edit is also written synchronously to localStorage
+  until IndexedDB confirms the save, because a tab closed right after typing can cut off an
+  IndexedDB write.
+
+## Phase 1 status
+
+Works: live outline → diagram (both fixtures), one cluster per outlet, kind colours,
+socket labels, unused sockets drawn, signal links dashed (including across outlets),
+Overall / one-outlet views, tap an item ↔ outline line highlight, inline line markers for
+warnings and errors, Tab/Shift+Tab indent, multiple displays saved in IndexedDB, SVG/PNG
+export, light/dark/auto theme, offline after first load, installable on iPhone home screen.
+Not yet: Needs-attention view (Phase 3), print-friendly PDF (use the browser's print of the
+SVG for now; a print stylesheet comes with the label sheet in Phase 5), dragging items.
 
 ## Risks
 
