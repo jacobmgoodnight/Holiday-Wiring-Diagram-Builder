@@ -5,8 +5,8 @@ Type an indented outline, or (from Phase 2) tap preset icons, and see the power 
 
 > **Planning aid only.** Load figures are estimates, not an electrical inspection.
 
-**Status: Phase 1 (outline → diagram) complete.** Live diagram, one cluster per outlet,
-socket labels, SVG/PNG export, local saving and offline use. See [PLAN.md](PLAN.md) for the architecture,
+**Status: Phase 2 (tap editing) complete.** Build a plan by typing *or* tapping: "+" on any
+item or unused socket, pick an icon, done. Both views stay in sync, with shared undo. See [PLAN.md](PLAN.md) for the architecture,
 data model, phases and the decisions that need your review.
 
 ## Outline in 30 seconds
@@ -36,6 +36,12 @@ O01 Front porch outlet @15A GFCI
   controller, `L01` load) are assigned automatically and never renumbered when you insert lines.
 
 ## Using it
+
+* **Tap to build:** "+" on any item, or tap an "Unused socket", then pick an icon. The item
+  appears already plugged in; edit details in the panel only if you want to.
+* **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
+  drag it, or drag a preset from the palette onto a socket.
+* **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
 
 * Phones open one outlet at a time; tap **Overall** for everything. Desktops open Overall.
 * Tap an item in the diagram to highlight its outline line, or put the cursor on a line to
@@ -73,7 +79,13 @@ src/diagram/layout.ts                 tree layout per outlet (pure, shared with 
 src/diagram/svg.ts                    standalone SVG export
 src/diagram/Diagram.tsx               React Flow view, readable fit
 src/ui/OutlineEditor.tsx              textarea with line gutter and error markers
+src/ui/PresetPicker.tsx               icon picker (Recent, Favourites, search)
+src/ui/NodePanel.tsx                  item details panel
+src/model/actions.ts                  add / re-plug / unplug / delete / edit (pure, tested)
+src/model/history.ts                  undo/redo shared by both editors
+src/outline/sync.ts                   model → outline after diagram edits
+src/presets/presets.ts                preset library
 src/store/db.ts                       IndexedDB (Dexie), serialized writes
 public/sw.js                          offline app shell
-tests/smoke.spec.ts                   Playwright smoke tests
+tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance
 ```

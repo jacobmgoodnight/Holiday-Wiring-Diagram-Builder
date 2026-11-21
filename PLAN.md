@@ -93,7 +93,7 @@ and install/teardown.
 |---|---|---|
 | 0 ✅ | Scaffold, CI, Pages workflow, model types, parser/builder/serializer, tests | Halloween fixture parses to the expected node and link counts and round-trips byte-for-byte |
 | 1 ✅ | Live split view (stacked on phone), tree layout, outlet clusters, kind colours, socket labels, PNG/SVG export, inline error gutter, IndexedDB autosave, offline shell | Fixture renders recognisably like the Halloween diagram |
-| 2 | "+" on nodes/sockets, icon picker (Recent/Favorites/search), node panel, drag to re-plug, two-way sync, undo/redo (50+) | O02 branch rebuilt with taps only in < 1 min at phone size (Playwright) |
+| 2 ✅ | "+" on nodes/sockets, icon picker (Recent/Favorites/search), node panel, drag to re-plug, two-way sync, undo/redo (50+) | O02 branch rebuilt with taps only in < 1 min at phone size (Playwright) |
 | 3 | Load roll-ups, 80 % circuit badges, shared circuits, rating warnings, pixel helper, Needs-attention view | Fixture + Christmas fixture show correct estimates |
 | 4 | Field mode checklist, statuses, restore points, copy-from-last-year, tags, new-this-year | |
 | 5 | Custom presets, equipment library autocomplete, label sheet, JSON/CSV, storage locations | |
@@ -149,3 +149,33 @@ SVG for now; a print stylesheet comes with the label sheet in Phase 5), dragging
   with "One outlet" view for phone readability.
 * **Estimates read as certainty.** Every number carries `entered` vs `estimate` provenance
   and the app shows a planning-aid disclaimer.
+
+## Phase 2 status
+
+Works: "+" on every item and every unused socket opens the icon picker (Recent,
+Favourites, search, Enter picks the first match); one tap adds the item already plugged
+into that socket, with no form first. The details panel opens alongside (name, kind,
+qty, watts with an estimate flag, length, sockets, breaker/GFCI, status, new-this-year,
+tags, notes) and writes only the edited outline line. Move… then tap a target re-plugs
+(phones); on desktop, drag an item onto a socket or item, or drag a preset from the
+palette. Unplug, Delete, and Delete with everything below. Loops are refused with a
+message; a taken socket is a warning, not a block. Undo/redo (100 steps) covers typing and
+diagram edits together (Ctrl/Cmd+Z, Shift+Z, toolbar, and Undo on every toast).
+
+Acceptance: Playwright rebuilds the O02 branch at iPhone 13 size with **20 taps and 2
+pans** (~25 gestures; well under a minute by hand), and checks the resulting outline exactly.
+
+Decisions:
+
+* **D12. Touch uses Move… instead of drag.** On a phone almost every touch on the canvas
+  starts on an item, so drag-to-re-plug would turn ordinary panning into accidental
+  rewiring. Desktop (fine pointer) gets real drag with a highlighted drop target.
+* **D13. Emoji icons** for presets: zero assets, readable on iPhone, easy to replace with
+  drawn icons later.
+* **D14. Preset watts are written as estimates (`~40W`)** in the outline, so the text
+  itself shows which numbers were entered and which were guessed.
+* **D15. Edits made while another display is opening are dropped** (the outline is
+  read-only for that moment), so text can never land in the wrong display.
+
+Not yet: "Save as preset" and the equipment library (Phase 5), restore points (Phase 4),
+adding signal links from the diagram (type them in the outline for now).

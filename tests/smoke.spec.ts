@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
+import { newDisplay, outline } from './helpers';
 
 const halloween = readFileSync(new URL('../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 
-const outline = (page: import('@playwright/test').Page) => page.getByRole('textbox', { name: 'Outline' });
 
 test('outline → diagram, live, with saving and export', async ({ page, isMobile }) => {
   await page.goto('./');
@@ -48,6 +48,7 @@ test('outline → diagram, live, with saving and export', async ({ page, isMobil
 
   // SVG export downloads a file.
   const download = page.waitForEvent('download');
+  await page.getByLabel('Export').click();
   await page.getByRole('button', { name: 'SVG' }).click();
   expect((await download).suggestedFilename()).toBe('halloween-2026.svg');
 });
@@ -55,8 +56,7 @@ test('outline → diagram, live, with saving and export', async ({ page, isMobil
 test('a second display is kept separately', async ({ page }) => {
   await page.goto('./');
   await expect(outline(page)).toBeVisible();
-  await page.getByRole('button', { name: 'New', exact: true }).click();
-  await expect(outline(page)).toHaveValue(/^# New display \d{4}\nO01 Outlet\n$/);
+  await newDisplay(page);
   await outline(page).fill('# Garage test\nO01 Garage outlet\n  Inflatable 120W\n');
   await expect(page.getByRole('combobox', { name: 'Display' })).toContainText('Garage test');
   await page.getByRole('combobox', { name: 'Display' }).selectOption({ label: 'Christmas 2026 (example)' });
