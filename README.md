@@ -3,10 +3,11 @@
 Fast, local-first sketchpad for holiday display power wiring (Christmas and Halloween).
 Type an indented outline, or (from Phase 2) tap preset icons, and see the power tree.
 
-> **Planning aid only.** Load figures are estimates, not an electrical inspection.
+> **Planning aid only**, not an electrical inspection.
 
-**Status: Phase 2 (tap editing) complete.** Build a plan by typing *or* tapping: "+" on any
-item or unused socket, pick an icon, done. Both views stay in sync, with shared undo. See [PLAN.md](PLAN.md) for the architecture,
+**Status: Phase 4 (field mode and seasons) complete; Phase 3 (load checks) deferred.**
+Build a plan by typing or tapping, install and tear it down from a checklist, and copy it
+for next year. See [PLAN.md](PLAN.md) for the architecture,
 data model, phases and the decisions that need your review.
 
 ## Outline in 30 seconds
@@ -42,6 +43,9 @@ O01 Front porch outlet @15A GFCI
 * **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
   drag it, or drag a preset from the palette onto a socket.
 * **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
+* **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
+  boxes. Ticks update the same plan the diagram shows.
+* **⋯ menu**: Copy for next year, Changes since last year, Restore points, Delete.
 
 * Phones open one outlet at a time; tap **Overall** for everything. Desktops open Overall.
 * Tap an item in the diagram to highlight its outline line, or put the cursor on a line to
@@ -85,7 +89,10 @@ src/model/actions.ts                  add / re-plug / unplug / delete / edit (pu
 src/model/history.ts                  undo/redo shared by both editors
 src/outline/sync.ts                   model → outline after diagram edits
 src/presets/presets.ts                preset library
+src/model/checklist.ts                install/teardown lists
+src/model/season.ts                   copy for next year, compare, restore-point retention
+src/ui/Checklist.tsx, Dialogs.tsx     field mode, restore/copy/changes dialogs
 src/store/db.ts                       IndexedDB (Dexie), serialized writes
 public/sw.js                          offline app shell
-tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance
+tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance, field mode
 ```

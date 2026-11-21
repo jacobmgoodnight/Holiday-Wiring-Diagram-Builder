@@ -94,8 +94,8 @@ and install/teardown.
 | 0 ✅ | Scaffold, CI, Pages workflow, model types, parser/builder/serializer, tests | Halloween fixture parses to the expected node and link counts and round-trips byte-for-byte |
 | 1 ✅ | Live split view (stacked on phone), tree layout, outlet clusters, kind colours, socket labels, PNG/SVG export, inline error gutter, IndexedDB autosave, offline shell | Fixture renders recognisably like the Halloween diagram |
 | 2 ✅ | "+" on nodes/sockets, icon picker (Recent/Favorites/search), node panel, drag to re-plug, two-way sync, undo/redo (50+) | O02 branch rebuilt with taps only in < 1 min at phone size (Playwright) |
-| 3 | Load roll-ups, 80 % circuit badges, shared circuits, rating warnings, pixel helper, Needs-attention view | Fixture + Christmas fixture show correct estimates |
-| 4 | Field mode checklist, statuses, restore points, copy-from-last-year, tags, new-this-year | |
+| 3 ⏸ | *Deferred at your request (not focusing on watts/load).* Load roll-ups, 80 % circuit badges, shared circuits, rating warnings, pixel helper, Needs-attention view | Fixture + Christmas fixture show correct estimates |
+| 4 ✅ | Field mode checklist, statuses, restore points, copy-from-last-year, tags, new-this-year | |
 | 5 | Custom presets, equipment library autocomplete, label sheet, JSON/CSV, storage locations | |
 | 6 | Optional photo overlay (seam: per-node `position` map keyed by view id) | |
 
@@ -179,3 +179,40 @@ Decisions:
 
 Not yet: "Save as preset" and the equipment library (Phase 5), restore points (Phase 4),
 adding signal links from the diagram (type them in the outline for now).
+
+## Phase 3: deferred
+
+You asked not to focus on watts or load, so load roll-ups, circuit badges and rating
+warnings are not being built. Watt estimates were also removed from the presets and the
+picker; a watts field remains (optional, under "More details") and `300W` in the outline
+still parses, but nothing is ever guessed or totalled.
+
+## Phase 4 status
+
+Works:
+
+* **Checklist (field mode)**: Plan / Checklist toggle. Install runs outlet by outlet from
+  the wall outwards; Teardown runs each outlet back to the wall and shows each item's
+  storage spot. Ticking sets status (install) or packed (teardown) on the same model the
+  diagram uses, and writes `[installed]` / `[verified]` into the outline. Hide done,
+  per-outlet progress, "Show on diagram" for any row, Clear packed.
+* **Copy for next year** (⋯ menu): same items, IDs and wiring; every status planned; new
+  and packed cleared; notes and storage kept; year bumped in the title. Items added to the
+  copy are marked new automatically. **Changes since last year** lists added, re-plugged,
+  renamed and removed items by ID.
+* **Restore points** (⋯ menu): automatic (first edit after opening, then at most every
+  10 minutes; newest 20 kept) and manual (kept). Restoring saves the current state first
+  and is undoable. Stored only on this device.
+* **Tag filter**: fades every item without the chosen tag.
+
+Decisions:
+
+* **D16. Removing an item keeps its neighbours' socket numbers.** Deleting socket 2's item
+  used to renumber socket 3 to 2 in the outline. Later siblings now get their number
+  written (`3: Fog machine`), so nothing appears to move that did not.
+* **D17. "+ Plug something in" without a socket fills the first written "Unused socket"**
+  before adding a new one, so a 3-way stake never grows a fourth socket by accident.
+* **D18. Copies keep retired items** (grey, struck through) rather than deleting them, since
+  deleting would change wiring. Delete them yourself when they are gone.
+* **D19. Packed and storage spot are model-only** (not written into the outline): they are
+  seasonal field state, not part of the plan you type.
