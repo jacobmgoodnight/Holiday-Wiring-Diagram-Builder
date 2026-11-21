@@ -335,8 +335,10 @@ export function buildDisplay(text: string, options: BuildOptions = {}): BuildRes
     links,
     comments,
     trailingBlank: trailingBlank || undefined,
+    copiedFrom: previous?.display.copiedFrom,
   };
   if (!display.trailingBlank) delete display.trailingBlank;
+  if (!display.copiedFrom) delete display.copiedFrom;
   if (display.year === undefined) delete display.year;
 
   diagnostics.sort((a, b) => a.line - b.line);

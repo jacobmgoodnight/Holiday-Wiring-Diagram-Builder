@@ -3,6 +3,7 @@
  * backup (Phase 5). Writes go through one queue so a slow write can never land after a newer one.
  */
 import Dexie, { type Table } from 'dexie';
+import { snapshotsToPrune } from '../model/season';
 import type { Display } from '../model/types';
 
 export interface StoredDisplay {
@@ -20,6 +21,19 @@ export interface StoredDisplay {
   schema: 1;
 }
 
+/** A restore point: a complete local copy of one display at a moment. */
+export interface Snapshot {
+  id?: number;
+  displayId: string;
+  at: number;
+  reason: 'auto' | 'manual' | 'before-restore';
+  title: string;
+  itemCount: number;
+  text: string;
+  display: Display;
+  lineNodeIds: (string | null)[];
+}
+
 export interface Meta {
   key: string;
   value: unknown;
@@ -28,9 +42,12 @@ export interface Meta {
 class SketchpadDb extends Dexie {
   displays!: Table<StoredDisplay, string>;
   meta!: Table<Meta, string>;
+  snapshots!: Table<Snapshot, number>;
   constructor() {
     super('wiring-sketchpad');
     this.version(1).stores({ displays: 'id, updatedAt', meta: 'key' });
+    // v2 adds restore points; existing displays are untouched.
+    this.version(2).stores({ displays: 'id, updatedAt', meta: 'key', snapshots: '++id, displayId, at' });
   }
 }
 
@@ -84,8 +101,28 @@ export function saveDisplay(rec: StoredDisplay): Promise<void> {
   return run;
 }
 
+export function addSnapshot(snap: Omit<Snapshot, 'id'>): Promise<void> {
+  const run = queue.then(async () => {
+    const db = getDb();
+    await db.snapshots.add(snap as Snapshot);
+    const all = await db.snapshots.where('displayId').equals(snap.displayId).toArray();
+    const prune = snapshotsToPrune(all.map((s) => ({ id: s.id!, at: s.at, reason: s.reason })));
+    if (prune.length) await db.snapshots.bulkDelete(prune);
+  });
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+export async function listSnapshots(displayId: string): Promise<Snapshot[]> {
+  const all = await getDb().snapshots.where('displayId').equals(displayId).toArray();
+  return all.sort((a, b) => b.at - a.at);
+}
+
 export function deleteDisplay(id: string): Promise<void> {
-  const run = queue.then(() => getDb().displays.delete(id));
+  const run = queue.then(async () => {
+    await getDb().displays.delete(id);
+    await getDb().snapshots.where('displayId').equals(id).delete();
+  });
   queue = run.catch(() => undefined);
   return run;
 }

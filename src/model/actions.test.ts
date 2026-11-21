@@ -38,12 +38,12 @@ describe('addNode', () => {
         '  K01 2-port smart plug',
         '    C01 Extension cord',
         '      S01 4-way splitter',
-        '        Animated prop ~40W',
-        '        Spotlight ~15W',
-        '        Spotlight ~15W',
+        '        Animated prop',
+        '        Spotlight',
+        '        Spotlight',
         '        T01 Tote',
-        '          Projector ~250W',
-        '          Fan ~30W',
+        '          Projector',
+        '          Fan',
         '          S02 3-way splitter',
         '',
       ].join('\n'),
@@ -57,15 +57,21 @@ describe('addNode', () => {
   it('writes the socket label only when numbering would get it wrong', () => {
     const d0 = buildDisplay('O01 Porch\n  S01 4-way splitter\n', { id: 't' }).display;
     const r = addNode(d0, preset('spot'), { parent: 'S01', port: '3' });
-    expect(text(r.display)).toBe('O01 Porch\n  S01 4-way splitter\n    3: Spotlight ~15W\n');
+    expect(text(r.display)).toBe('O01 Porch\n  S01 4-way splitter\n    3: Spotlight\n');
     expect(socketLabels(r.display, 'S01').get(r.display.links.at(-1)!.id)).toBe('3');
   });
 
   it('fills a written "Unused socket" line in place', () => {
     const d0 = buildDisplay(halloween, { id: 'h' }).display;
     const r = addNode(d0, preset('inflatable'), { parent: 'S03', port: '3' });
-    expect(text(r.display)).toContain('      3: Inflatable ~150W\n\nO02');
+    expect(text(r.display)).toContain('      3: Inflatable\n\nO02');
     expect(text(r.display)).not.toContain('Unused socket');
+  });
+
+  it('fills the first written unused socket when no socket is named', () => {
+    const d0 = buildDisplay(halloween, { id: 'h' }).display;
+    const r = addNode(d0, preset('inflatable'), { parent: 'S03' });
+    expect(text(r.display)).toContain('      3: Inflatable\n\nO02');
   });
 
   it('warns but still adds when a socket is already used', () => {
@@ -91,6 +97,17 @@ describe('replug / unplug / delete', () => {
     expect(out).toContain('      3: C09 short black cord\n        Carved pumpkin 4, C7 flicker bulb\n');
     expect(out).not.toContain('Unused socket');
     expect(socketLabels(r.display, 'S08').size).toBe(2);
+  });
+
+  it('keeps later siblings on their sockets when one is removed', () => {
+    const d0 = buildDisplay('O01 x\n  S01 3-way splitter\n    Fan\n    Mister\n    Fog\n', { id: 't' }).display;
+    const mister = Object.values(d0.nodes).find((n) => n.label === 'Mister')!;
+    for (const r of [deleteNode(d0, mister.id, false), unplug(d0, mister.id), replug(d0, mister.id, { parent: 'O01' })]) {
+      expect(text(r.display)).toContain('    Fan\n    3: Fog\n');
+    }
+    // Removing the last one needs no pinning.
+    const fog = Object.values(d0.nodes).find((n) => n.label === 'Fog')!;
+    expect(text(deleteNode(d0, fog.id, false).display)).toContain('    Fan\n    Mister\n');
   });
 
   it('refuses loops', () => {
@@ -178,10 +195,11 @@ describe('history', () => {
 });
 
 describe('presets', () => {
-  it('have unique ids and estimate flags apply', () => {
+  it('have unique ids and never guess watts', () => {
     expect(new Set(PRESETS.map((p) => p.id)).size).toBe(PRESETS.length);
     const r = addNode(buildDisplay('O01 x\n').display, preset('c9'), { parent: 'O01' });
-    expect(r.display.nodes[r.nodeId!]).toMatchObject({ watts: 40, wattsApprox: true, category: 'c9' });
+    expect(r.display.nodes[r.nodeId!]).toMatchObject({ category: 'c9' });
+    expect(r.display.nodes[r.nodeId!].watts).toBeUndefined();
   });
 
   it('search matches names and keywords', () => {

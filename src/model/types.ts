@@ -117,6 +117,8 @@ export interface DisplayNode {
   location?: string;
   storage?: string;
   scheduleGroup?: string;
+  /** Teardown: packed away this season (model-only). */
+  packed?: boolean;
   /** Raw outline line content (after indentation) that created this node. */
   src?: string;
   /** For top-level nodes: position among top-level entries. */
@@ -172,6 +174,8 @@ export interface Display {
   comments: Comment[];
   /** Blank lines at the end of the outline. */
   trailingBlank?: number;
+  /** Display this one was copied from ("Copy for next year"), for the changes view. */
+  copiedFrom?: string;
 }
 
 export type Severity = 'error' | 'warning' | 'info';

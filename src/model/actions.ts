@@ -99,7 +99,15 @@ function attach(d: Display, childId: string, target: Target): string | undefined
   const parent = target.parent;
   if (!d.nodes[parent]) throw new ActionError(`No item ${parent}`);
   let warning: string | undefined;
-  if (target.port !== undefined) {
+  if (target.port === undefined) {
+    // No socket named: a written "Unused socket" line is the next free socket.
+    const placeholder = powerChildren(d, parent).find((l) => l.to === null);
+    if (placeholder) {
+      placeholder.to = childId;
+      delete placeholder.src;
+      return undefined;
+    }
+  } else {
     const labels = socketLabels(d, parent);
     const kids = powerChildren(d, parent);
     const placeholder = kids.find((l) => l.to === null && labels.get(l.id) === target.port);
@@ -116,6 +124,22 @@ function attach(d: Display, childId: string, target: Target): string | undefined
   d.links.push(link);
   if (target.port !== undefined && socketLabels(d, parent).get(link.id) !== target.port) link.port = target.port;
   return warning;
+}
+
+/**
+ * Before taking `link` off its parent, write out the socket numbers of later unlabelled
+ * siblings. Otherwise "3" would silently become "2" in the outline although nothing moved.
+ */
+function pinSiblingPorts(d: Display, link: Link) {
+  if (link.kind !== 'power') return;
+  const labels = socketLabels(d, link.from);
+  const removed = labels.get(link.id);
+  if (!removed || !/^\d+$/.test(removed)) return;
+  for (const sib of powerChildren(d, link.from)) {
+    if (sib.id === link.id || sib.port || sib.seq < link.seq) continue;
+    const label = labels.get(sib.id);
+    if (label && /^\d+$/.test(label)) sib.port = label;
+  }
 }
 
 function clean<T extends object>(o: T): T {
@@ -152,8 +176,11 @@ export function replug(display: Display, id: string, target: Target): ActionResu
   const d = clone(display);
   const home = homeLink(d, id);
   if (home && home.from === target.parent && target.port === undefined) return { display, nodeId: id };
-  // The old socket simply becomes free.
-  if (home) d.links = d.links.filter((l) => l !== home);
+  // The old socket simply becomes free; its neighbours keep their socket numbers.
+  if (home) {
+    pinSiblingPorts(d, home);
+    d.links = d.links.filter((l) => l !== home);
+  }
   const warning = attach(d, id, target);
   return { display: d, nodeId: id, warning };
 }
@@ -163,6 +190,7 @@ export function unplug(display: Display, id: string): ActionResult {
   const home = homeLink(display, id);
   if (!home) return { display, nodeId: id };
   const d = clone(display);
+  pinSiblingPorts(d, d.links.find((l) => l.id === home.id)!);
   d.links = d.links.filter((l) => l.id !== home.id);
   makeRoot(d, d.nodes[id]);
   return { display: d, nodeId: id };
@@ -177,6 +205,7 @@ export function deleteNode(display: Display, id: string, withChildren: boolean):
   const d = clone(display);
   const removed = withChildren ? subtreeIds(d, id) : new Set([id]);
   const home = homeLink(d, id);
+  if (home) pinSiblingPorts(d, home);
   const orphans = withChildren
     ? []
     : d.links.filter((l) => l.from === id && l.to && (l.kind === 'power' || l.owns)).sort((a, b) => a.seq - b.seq).map((l) => l.to!);
