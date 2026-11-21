@@ -1,6 +1,6 @@
 /**
- * Preset library for the icon picker. Watts are rough LED-era estimates, always stored as
- * approximate (`~`), and meant to be replaced with the number on the label.
+ * Preset library for the icon picker. Presets carry a name, icon, kind and socket count only;
+ * nothing is guessed about power draw.
  */
 import type { LoadCategory, NodeKind } from '../model/types';
 
@@ -15,8 +15,6 @@ export interface Preset {
   /** Default label written into the outline. */
   label: string;
   outputs?: number;
-  /** Estimated watts for one item (flagged as an estimate). */
-  watts?: number;
   keywords?: string;
 }
 
@@ -35,22 +33,22 @@ export const PRESETS: Preset[] = [
   { id: 'controller', name: 'Controller', icon: '🎛️', group: 'power', kind: 'controller', label: 'WLED controller', keywords: 'esp32 wled falcon' },
   { id: 'tote', name: 'Tote', icon: '📦', group: 'power', kind: 'enclosure', label: 'Tote', keywords: 'enclosure box bin' },
 
-  { id: 'c9', name: 'C9 roofline run', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 roofline run', watts: 40, keywords: 'c7 bulbs eaves gutter' },
-  { id: 'mini', name: 'Mini-light string', icon: '✨', group: 'load', kind: 'load', category: 'mini', label: 'Mini lights', watts: 25, keywords: 'string fairy' },
-  { id: 'icicle', name: 'Icicle / net lights', icon: '🧊', group: 'load', kind: 'load', category: 'icicle', label: 'Icicle lights', watts: 30, keywords: 'net bush' },
-  { id: 'pixel', name: 'Pixel tree', icon: '🌈', group: 'load', kind: 'load', category: 'pixel', label: 'Pixel tree', watts: 60, keywords: 'wled rgb mega tree' },
-  { id: 'tree', name: 'Lit tree', icon: '🎄', group: 'load', kind: 'load', category: 'tree', label: 'Tree lights', watts: 50, keywords: 'christmas tree' },
-  { id: 'wreath', name: 'Wreath', icon: '🎀', group: 'load', kind: 'load', category: 'wreath', label: 'Wreath', watts: 20, keywords: 'garland' },
-  { id: 'pathway', name: 'Pathway lights', icon: '🍬', group: 'load', kind: 'load', category: 'pathway', label: 'Pathway lights', watts: 20, keywords: 'candy cane walkway stake' },
-  { id: 'yardart', name: 'Light-up yard art', icon: '🦌', group: 'load', kind: 'load', category: 'yard-art', label: 'Light-up yard art', watts: 30, keywords: 'reindeer silhouette' },
-  { id: 'inflatable', name: 'Inflatable', icon: '⛄', group: 'load', kind: 'load', category: 'inflatable', label: 'Inflatable', watts: 150, keywords: 'blow up snowman' },
-  { id: 'prop', name: 'Animated prop', icon: '🎃', group: 'load', kind: 'load', category: 'prop', label: 'Animated prop', watts: 40, keywords: 'skelly animatronic scarecrow' },
-  { id: 'spot', name: 'Spotlight', icon: '🔦', group: 'load', kind: 'load', category: 'spotlight', label: 'Spotlight', watts: 15, keywords: 'flood uplight blacklight uv' },
-  { id: 'projector', name: 'Projector', icon: '📽️', group: 'load', kind: 'load', category: 'projector', label: 'Projector', watts: 250, keywords: 'epson dukane window' },
-  { id: 'media', name: 'Media player', icon: '📺', group: 'load', kind: 'load', category: 'media', label: 'Media player', watts: 10, keywords: 'micca fire stick roku' },
-  { id: 'speaker', name: 'Speaker', icon: '🔊', group: 'load', kind: 'load', category: 'speaker', label: 'Speaker', watts: 20, keywords: 'audio' },
-  { id: 'fan', name: 'Fan', icon: '🌀', group: 'load', kind: 'load', category: 'fan', label: 'Fan', watts: 30, keywords: 'blower cooling' },
-  { id: 'fog', name: 'Fog machine', icon: '🌫️', group: 'load', kind: 'load', category: 'fog', label: 'Fog machine', watts: 400, keywords: 'mister haze' },
+  { id: 'c9', name: 'C9 roofline run', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 roofline run', keywords: 'c7 bulbs eaves gutter' },
+  { id: 'mini', name: 'Mini-light string', icon: '✨', group: 'load', kind: 'load', category: 'mini', label: 'Mini lights', keywords: 'string fairy' },
+  { id: 'icicle', name: 'Icicle / net lights', icon: '🧊', group: 'load', kind: 'load', category: 'icicle', label: 'Icicle lights', keywords: 'net bush' },
+  { id: 'pixel', name: 'Pixel tree', icon: '🌈', group: 'load', kind: 'load', category: 'pixel', label: 'Pixel tree', keywords: 'wled rgb mega tree' },
+  { id: 'tree', name: 'Lit tree', icon: '🎄', group: 'load', kind: 'load', category: 'tree', label: 'Tree lights', keywords: 'christmas tree' },
+  { id: 'wreath', name: 'Wreath', icon: '🎀', group: 'load', kind: 'load', category: 'wreath', label: 'Wreath', keywords: 'garland' },
+  { id: 'pathway', name: 'Pathway lights', icon: '🍬', group: 'load', kind: 'load', category: 'pathway', label: 'Pathway lights', keywords: 'candy cane walkway stake' },
+  { id: 'yardart', name: 'Light-up yard art', icon: '🦌', group: 'load', kind: 'load', category: 'yard-art', label: 'Light-up yard art', keywords: 'reindeer silhouette' },
+  { id: 'inflatable', name: 'Inflatable', icon: '⛄', group: 'load', kind: 'load', category: 'inflatable', label: 'Inflatable', keywords: 'blow up snowman' },
+  { id: 'prop', name: 'Animated prop', icon: '🎃', group: 'load', kind: 'load', category: 'prop', label: 'Animated prop', keywords: 'skelly animatronic scarecrow' },
+  { id: 'spot', name: 'Spotlight', icon: '🔦', group: 'load', kind: 'load', category: 'spotlight', label: 'Spotlight', keywords: 'flood uplight blacklight uv' },
+  { id: 'projector', name: 'Projector', icon: '📽️', group: 'load', kind: 'load', category: 'projector', label: 'Projector', keywords: 'epson dukane window' },
+  { id: 'media', name: 'Media player', icon: '📺', group: 'load', kind: 'load', category: 'media', label: 'Media player', keywords: 'micca fire stick roku' },
+  { id: 'speaker', name: 'Speaker', icon: '🔊', group: 'load', kind: 'load', category: 'speaker', label: 'Speaker', keywords: 'audio' },
+  { id: 'fan', name: 'Fan', icon: '🌀', group: 'load', kind: 'load', category: 'fan', label: 'Fan', keywords: 'blower cooling' },
+  { id: 'fog', name: 'Fog machine', icon: '🌫️', group: 'load', kind: 'load', category: 'fog', label: 'Fog machine', keywords: 'mister haze' },
   { id: 'other', name: 'Other', icon: '⭐', group: 'load', kind: 'load', category: 'other', label: 'Item', keywords: 'misc' },
 ];
 

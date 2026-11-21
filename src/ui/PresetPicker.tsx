@@ -37,7 +37,6 @@ export function PresetPicker({ title, onPick, onClose }: Props) {
           {p.icon}
         </span>
         <span className="tile-name">{p.name}</span>
-        {p.watts !== undefined && <span className="tile-w">~{p.watts}W est.</span>}
       </button>
       <button
         type="button"
@@ -109,7 +108,6 @@ export function PresetPicker({ title, onPick, onClose }: Props) {
               </section>
             </>
           )}
-          <p className="muted small">Watts are rough estimates (shown with ~). Check the label and edit.</p>
         </div>
       </div>
     </div>
