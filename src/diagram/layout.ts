@@ -16,6 +16,8 @@ export interface LayoutNode {
   nodeId?: string;
   /** Ghosts: the item whose socket this is. */
   parentId?: string;
+  /** Ghosts: the socket label (as shown on the wire). */
+  port?: string;
   cluster: string;
   x: number;
   y: number;
@@ -206,7 +208,7 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
       let ghostN = 0;
       const addGhost = (label: string | undefined) => {
         const gid = `ghost:${id}:${ghostN++}`;
-        boxes.set(gid, { id: gid, type: 'ghost', parentId: id, cluster: cluster.id, x: 0, y: 0, w: GHOST_W, h: GHOST_H, tone: 'unused', lines: ['Unused socket'] });
+        boxes.set(gid, { id: gid, type: 'ghost', parentId: id, port: label, cluster: cluster.id, x: 0, y: 0, w: GHOST_W, h: GHOST_H, tone: 'unused', lines: ['Unused socket'] });
         add(id, gid);
         edges.push({ id: `e:${gid}`, source: id, target: gid, kind: 'power', label });
       };
@@ -227,7 +229,8 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
       for (let i = explicit; i < unusedSockets(display, id); i++) {
         while (usedLabels.has(String(next))) next++;
         usedLabels.add(String(next));
-        addGhost(String(next));
+        // A single-output item (a plain cord) has an unnumbered end, as in the outline.
+        addGhost(display.nodes[id].outputs === 1 ? undefined : String(next));
       }
     }
 

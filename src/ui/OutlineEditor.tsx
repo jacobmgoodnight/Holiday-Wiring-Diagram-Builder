@@ -13,11 +13,12 @@ interface Props {
   /** Changes when the outline should scroll to `highlightLine`. */
   scrollRequest?: number;
   onCursorLine: (line: number) => void;
+  readOnly?: boolean;
 }
 
 const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
 
-export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scrollRequest, onCursorLine }: Props) {
+export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scrollRequest, onCursorLine, readOnly }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
   const gutterInner = useRef<HTMLDivElement>(null);
   const backdropInner = useRef<HTMLDivElement>(null);
@@ -118,6 +119,7 @@ export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scr
             autoCorrect="off"
             autoComplete="off"
             wrap="off"
+            readOnly={readOnly}
             value={value}
             onChange={(e) => {
               onChange(e.target.value);
