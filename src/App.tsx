@@ -17,7 +17,9 @@ import {
   unplug,
   updateNode,
 } from './model/actions';
+import { type ChecklistMode, type ChecklistRow, checklist } from './model/checklist';
 import { displayStats } from './model/graph';
+import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
 import type { Display, NodeKind } from './model/types';
 import { type BuildResult, buildDisplay } from './outline';
@@ -26,8 +28,11 @@ import { type Preset, presetById } from './presets/presets';
 import { noteUsed } from './presets/prefs';
 import { SAMPLE_OUTLINE } from './sample';
 import {
+  type Snapshot,
   type StoredDisplay,
+  addSnapshot,
   deleteDisplay,
+  listSnapshots,
   getDisplay,
   getMeta,
   lineIdsFromStored,
@@ -37,6 +42,8 @@ import {
   storageAvailable,
   toStored,
 } from './store/db';
+import { Checklist } from './ui/Checklist';
+import { ChangesDialog, CopyDialog, RestoreDialog } from './ui/Dialogs';
 import { NodePanel } from './ui/NodePanel';
 import { OutlineEditor } from './ui/OutlineEditor';
 import { Palette } from './ui/Palette';
@@ -45,6 +52,8 @@ import { ThemeButton } from './ui/ThemeButton';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
 const OVERALL = '__overall__';
+/** Automatic restore points: at most one per display per this interval while editing. */
+const AUTO_SNAPSHOT_MS = 10 * 60 * 1000;
 /**
  * Synchronous crash-recovery copy of the newest text. IndexedDB writes can be cut off when a
  * tab is closed right after an edit; localStorage writes cannot. Cleared once IndexedDB has it.
@@ -136,6 +145,13 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   /** True while another display is being opened: edits wait so they cannot land in the wrong one. */
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'plan' | 'checklist'>('plan');
+  const [clMode, setClMode] = useState<ChecklistMode>('install');
+  const [hideDone, setHideDone] = useState(false);
+  const [tag, setTag] = useState('');
+  const [dialog, setDialog] = useState<null | 'restore' | 'copy' | 'changes'>(null);
+  const [changes, setChanges] = useState<{ source: string | null; list: Change[] | null } | null>(null);
+  const lastAuto = useRef(new Map<string, number>());
   const persist = useRef(true);
   const canDrag = useMemo(finePointer, []);
 
@@ -149,6 +165,8 @@ export function App() {
     setSelected(undefined);
     setMoving(undefined);
     setPicker(null);
+    setDialog(null);
+    setTag('');
     // Phones start on one outlet (readable); desktops start on the whole display.
     const clusters = clusterList(next.result.display);
     setView(isPhone() && clusters.length ? clusters[0].id : OVERALL);
@@ -238,8 +256,26 @@ export function App() {
     saveTimer.current = window.setTimeout(() => void flush(), 400);
   };
 
+  const snapshotOf = (d: Doc, reason: Snapshot['reason']): Omit<Snapshot, 'id'> => ({
+    displayId: d.id,
+    at: Date.now(),
+    reason,
+    title: d.result.display.title,
+    itemCount: Object.keys(d.result.display.nodes).length,
+    text: d.text,
+    display: d.result.display,
+    lineNodeIds: d.result.lineNodeIds.map((x) => x ?? null),
+  });
+
   const commit = (next: Doc, coalesceKey?: string) => {
     if (!hist || busy) return;
+    // Automatic restore point of the state *before* this edit: on the first edit after
+    // opening, then at most every 10 minutes.
+    const now = Date.now();
+    if (persist.current && hist.present.id === next.id && now - (lastAuto.current.get(next.id) ?? 0) > AUTO_SNAPSHOT_MS) {
+      lastAuto.current.set(next.id, now);
+      void addSnapshot(snapshotOf(hist.present, 'auto')).catch(() => undefined);
+    }
     // Never apply an edit to a different display than the one it was made in.
     setHist((h) => (h && h.present.id === next.id ? push(h, next, { coalesceKey }) : h));
     scheduleSave(next);
@@ -254,6 +290,10 @@ export function App() {
   };
 
   const showToast = (message: string, canUndo = false) => setToast({ message, canUndo, key: Date.now() });
+  // A message never covers a dialog the user just opened.
+  useEffect(() => {
+    if (dialog || picker) setToast(null);
+  }, [dialog, picker]);
   useEffect(() => {
     if (!toast) return;
     const t = window.setTimeout(() => setToast(null), 6000);
@@ -295,7 +335,8 @@ export function App() {
   const addPreset = (preset: Preset, target: Target) => {
     noteUsed(preset.id);
     act(
-      (d) => addNode(d, preset, target),
+      // In a copy of last year's display, anything added is new this year.
+      (d) => addNode(d, { ...preset, isNew: d.copiedFrom ? true : undefined }, target),
       (r, next) => reveal(r.nodeId, next),
     );
   };
@@ -404,9 +445,70 @@ export function App() {
       if (rec) open(docFromStored(rec));
     });
 
+  const saveRestorePoint = async () => {
+    if (!doc) return;
+    await addSnapshot(snapshotOf(doc, 'manual'));
+    showToast('Restore point saved on this device');
+  };
+
+  const restore = (snap: Snapshot) => {
+    if (!doc) return;
+    void addSnapshot(snapshotOf(doc, 'before-restore'));
+    const prevIds = snap.lineNodeIds.map((x) => x ?? undefined);
+    const restoredDisplay = { ...snap.display, id: doc.id };
+    const result = buildDisplay(snap.text, { previous: { display: restoredDisplay, text: snap.text, lineNodeIds: prevIds } });
+    commit({ id: doc.id, text: snap.text, result });
+    setDialog(null);
+    setSelected(undefined);
+    setFitNonce((n) => n + 1);
+    showToast(`Restored the version from ${new Date(snap.at).toLocaleString()}`, true);
+  };
+
+  const copyDisplay = (title: string) =>
+    whileBusy(async () => {
+      if (!doc) return;
+      await flush();
+      const copy = copyForNextYear(doc.result.display, newId(), title);
+      const synced = syncFromModel(copy);
+      const d = { id: copy.id, text: synced.text, result: synced.result };
+      if (persist.current) await saveDisplay(toStored(d.text, d.result.display, d.result.lineNodeIds));
+      open(d);
+      await refreshList();
+      showToast(`Copied. "${title}" starts with everything planned.`);
+    });
+
+  const openChanges = async () => {
+    if (!doc?.result.display.copiedFrom) return;
+    const src = await getDisplay(doc.result.display.copiedFrom);
+    setChanges(src ? { source: src.title, list: compareDisplays(src.display, doc.result.display) } : { source: null, list: null });
+    setDialog('changes');
+  };
+
+  const showOnDiagram = (id: string) => {
+    if (!doc) return;
+    setMode('plan');
+    setDialog(null);
+    setSelected(id);
+    const owner = clusterOf(doc.result.display, id);
+    if (view !== OVERALL && owner) setView(owner);
+    setFitNonce((n) => n + 1);
+    setCenterRequest((n) => (n ?? 0) + 1);
+    setOutlineScroll((n) => n + 1);
+  };
+
+  const toggleRow = (r: ChecklistRow) => {
+    if (clMode === 'install') act((d) => updateNode(d, r.id, { status: r.done ? 'planned' : 'installed' }));
+    else act((d) => updateNode(d, r.id, { packed: r.done ? undefined : true }));
+  };
+
+  const closeMenu = (e: React.MouseEvent) => {
+    const det = (e.currentTarget as HTMLElement).closest('details');
+    if (det) det.open = false;
+  };
+
   const removeCurrent = async () => {
     if (!doc || !persist.current) return;
-    if (!window.confirm(`Delete "${doc.result.display.title}" from this browser? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete "${doc.result.display.title}" and its restore points from this browser? This cannot be undone.`)) return;
     pending.current = null;
     window.clearTimeout(saveTimer.current);
     writeDraft(null);
@@ -426,6 +528,9 @@ export function App() {
   const highlight = selected ? doc.result.lineNodeIds.indexOf(selected) : -1;
   const options = list.some((d) => d.id === doc.id) ? list : [{ id: doc.id, title }, ...list];
   const selNode = selected ? display.nodes[selected] : undefined;
+  const allTags = [...new Set(Object.values(display.nodes).flatMap((n) => n.tags))].sort();
+  const dimmed = tag ? new Set(Object.values(display.nodes).filter((n) => !n.tags.includes(tag)).map((n) => n.id)) : undefined;
+  const groups = mode === 'checklist' ? checklist(display, clMode) : [];
 
   return (
     <div className="app">
@@ -455,24 +560,83 @@ export function App() {
           <button type="button" onClick={() => void newDisplay()} disabled={!persist.current}>
             New
           </button>
-          <button type="button" onClick={() => void removeCurrent()} disabled={!persist.current}>
-            Delete
-          </button>
+          <details className="menu">
+            <summary aria-label="More display actions">⋯</summary>
+            <div className="menu-list" role="menu">
+              <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); setDialog('copy'); }}>
+                Copy for next year…
+              </button>
+              <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); setDialog('restore'); }}>
+                Restore points…
+              </button>
+              {display.copiedFrom && (
+                <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); void openChanges(); }}>
+                  Changes since last year…
+                </button>
+              )}
+              <button type="button" role="menuitem" className="danger" disabled={!persist.current} onClick={(e) => { closeMenu(e); void removeCurrent(); }}>
+                Delete this display
+              </button>
+            </div>
+          </details>
           <ThemeButton />
         </div>
       </header>
 
-      <nav className="views" aria-label="Diagram view">
-        <button type="button" className={activeView === OVERALL ? 'chip on' : 'chip'} aria-pressed={activeView === OVERALL} onClick={() => showView(OVERALL)}>
-          Overall
-        </button>
-        {clusters.map((c) => (
-          <button key={c.id} type="button" className={activeView === c.id ? 'chip on' : 'chip'} aria-pressed={activeView === c.id} onClick={() => showView(c.id)} title={c.title}>
-            {c.title}
+      <nav className="views" aria-label="View">
+        <div className="seg" role="group" aria-label="Mode">
+          <button type="button" className={mode === 'plan' ? 'on' : ''} aria-pressed={mode === 'plan'} onClick={() => { setMode('plan'); setFitNonce((n) => n + 1); }}>
+            Plan
           </button>
-        ))}
+          <button type="button" className={mode === 'checklist' ? 'on' : ''} aria-pressed={mode === 'checklist'} onClick={() => { setMode('checklist'); setMoving(undefined); }}>
+            Checklist
+          </button>
+        </div>
+        {mode === 'plan' && (
+          <>
+            <button type="button" className={activeView === OVERALL ? 'chip on' : 'chip'} aria-pressed={activeView === OVERALL} onClick={() => showView(OVERALL)}>
+              Overall
+            </button>
+            {clusters.map((c) => (
+              <button key={c.id} type="button" className={activeView === c.id ? 'chip on' : 'chip'} aria-pressed={activeView === c.id} onClick={() => showView(c.id)} title={c.title}>
+                {c.title}
+              </button>
+            ))}
+            {allTags.length > 0 && (
+              <select className="tag-filter" aria-label="Highlight tag" value={tag} onChange={(e) => setTag(e.target.value)}>
+                <option value="">All tags</option>
+                {allTags.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            )}
+          </>
+        )}
       </nav>
 
+      {mode === 'checklist' ? (
+        <main className="field-mode">
+          <Checklist
+            groups={groups}
+            mode={clMode}
+            onMode={setClMode}
+            hideDone={hideDone}
+            onHideDone={setHideDone}
+            onToggle={toggleRow}
+            onVerify={(r) => act((d) => updateNode(d, r.id, { status: r.status === 'verified' ? 'installed' : 'verified' }))}
+            onShow={showOnDiagram}
+            onResetPacked={() =>
+              act((d) => {
+                let out = d;
+                for (const n of Object.values(d.nodes)) if (n.packed) out = updateNode(out, n.id, { packed: undefined }).display;
+                return { display: out };
+              })
+            }
+          />
+        </main>
+      ) : (
       <main className="split">
         <section className="pane-diagram" aria-label="Diagram">
           {canDrag && <Palette selectedId={selected} onPick={(p) => selected && addPreset(p, { parent: selected })} />}
@@ -492,6 +656,7 @@ export function App() {
               if (p) addPreset(p, target);
             }}
             canDrag={canDrag}
+            dimmed={dimmed}
             undo={{ can: hist.past.length > 0, run: doUndo }}
             redo={{ can: hist.future.length > 0, run: doRedo }}
             onExportSvg={exportSvg}
@@ -531,12 +696,21 @@ export function App() {
             onCursorLine={selectFromOutline}
           />
           <p className="note">
-            Two spaces = plugged into the line above. Planning aid only: watts and loads are estimates, not an electrical
-            inspection.
+            Two spaces = plugged into the line above. A planning aid, not an electrical inspection.
           </p>
         </section>
       </main>
+      )}
 
+      {dialog === 'restore' && doc && (
+        <RestoreDialog load={() => listSnapshots(doc.id)} onSaveNow={saveRestorePoint} onRestore={restore} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'copy' && (
+        <CopyDialog from={title} suggested={nextTitle(title)} onCopy={(t) => void copyDisplay(t)} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'changes' && changes && (
+        <ChangesDialog source={changes.source} changes={changes.list} onShow={showOnDiagram} onClose={() => setDialog(null)} />
+      )}
       {picker && (
         <PresetPicker
           title={targetTitle(picker)}

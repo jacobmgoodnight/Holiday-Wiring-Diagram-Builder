@@ -36,6 +36,7 @@ interface Ctx {
   moving: boolean;
   blocked: Set<string>;
   dropTarget?: string;
+  dimmed?: Set<string>;
 }
 const DiagramCtx = createContext<Ctx>({ onAdd: () => undefined, moving: false, blocked: new Set() });
 
@@ -43,7 +44,7 @@ const isBlocked = (ln: LayoutNode, blocked: Set<string>) => (ln.nodeId ? blocked
 
 const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
   const { ln, selected } = data;
-  const { onAdd, moving, blocked, dropTarget } = useContext(DiagramCtx);
+  const { onAdd, moving, blocked, dropTarget, dimmed } = useContext(DiagramCtx);
   const id = ln.nodeId;
   const ghost = ln.type === 'ghost';
   const cls = [
@@ -53,6 +54,7 @@ const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
     selected && 'selected',
     moving && (isBlocked(ln, blocked) ? 'blocked' : 'target'),
     dropTarget === ln.id && 'drop',
+    dimmed && isBlocked(ln, dimmed) && 'dim',
   ]
     .filter(Boolean)
     .join(' ');
@@ -159,6 +161,8 @@ export interface DiagramProps {
   onDropPreset: (presetId: string, target: Target) => void;
   /** Allow mouse dragging to re-plug (fine pointers only). */
   canDrag: boolean;
+  /** Items to fade (tag filter). */
+  dimmed?: Set<string>;
   undo: { can: boolean; run: () => void };
   redo: { can: boolean; run: () => void };
   onExportSvg: () => void;
@@ -298,8 +302,8 @@ function DiagramInner(props: DiagramProps) {
   };
 
   const ctx = useMemo<Ctx>(
-    () => ({ onAdd: (t) => props.onAdd(t), moving: !!movingId || !!drag, blocked, dropTarget }),
-    [props.onAdd, movingId, drag, blocked, dropTarget],
+    () => ({ onAdd: (t) => props.onAdd(t), moving: !!movingId || !!drag, blocked, dropTarget, dimmed: props.dimmed }),
+    [props.onAdd, movingId, drag, blocked, dropTarget, props.dimmed],
   );
 
   return (

@@ -34,8 +34,11 @@ test('outline → diagram, live, with saving and export', async ({ page, isMobil
   await expect(page.locator('.dn.ghost')).toHaveCount(4);
 
   // Tapping a diagram item highlights its outline line.
-  await page.locator('.dn', { hasText: 'S01' }).click();
-  await expect(page.locator('.gl.g-sel')).toHaveText('37');
+  // The view fits one frame after switching; retry if a click lands mid-jump under load.
+  await expect(async () => {
+    await page.locator('.dn', { hasText: 'S01' }).click();
+    await expect(page.locator('.gl.g-sel')).toHaveText('37', { timeout: 1000 });
+  }).toPass({ timeout: 8000 });
 
   // A typing mistake shows inline without losing text.
   await outline(page).fill(halloween + '     odd indent\n');

@@ -76,7 +76,7 @@ test.describe('phone', () => {
 
     const v = await outline(page).inputValue();
     expect(v.split('\n').slice(1).join('\n')).toBe(
-      'O01 Outlet\n  K01 2-port smart plug\n    C01 Extension cord\n      S01 4-way splitter\n        Animated prop ~40W\n        Spotlight ~15W\n        Spotlight ~15W\n        T01 Tote\n          Projector ~250W\n          Fan ~30W\n          S02 3-way splitter\n',
+      'O01 Outlet\n  K01 2-port smart plug\n    C01 Extension cord\n      S01 4-way splitter\n        Animated prop\n        Spotlight\n        Spotlight\n        T01 Tote\n          Projector\n          Fan\n          S02 3-way splitter\n',
     );
     console.log(`O02 rebuild: ${taps} taps, ${pans} pans, ${seconds.toFixed(1)}s automated`);
     expect(taps).toBeLessThanOrEqual(20);
@@ -140,7 +140,7 @@ test.describe('desktop', () => {
     await outline(page).fill('# Palette\nO01 Porch\n  S01 2-way splitter\n');
     await page.getByRole('button', { name: 'Fit', exact: true }).click();
     await page.locator('.pal', { hasText: 'Inflatable' }).dragTo(node(page, 'Unused socket 2 on S01'));
-    await expect(outline(page)).toHaveValue('# Palette\nO01 Porch\n  S01 2-way splitter\n    2: Inflatable ~150W\n');
+    await expect(outline(page)).toHaveValue('# Palette\nO01 Porch\n  S01 2-way splitter\n    2: Inflatable\n');
   });
 
   test('panel edits write one outline line; undo spans typing and diagram edits', async ({ page }) => {
@@ -149,18 +149,18 @@ test.describe('desktop', () => {
     await outline(page).fill('# Panel\nO01 Porch\n  Wreath\n');
     await page.waitForTimeout(1100); // end the typing burst so the next edit is its own undo step
     await node(page, 'L01').click();
-    const watts = page.getByLabel('Watts', { exact: true });
-    await watts.fill('60');
-    await watts.press('Enter');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath 60W\n');
+    const qty = page.getByLabel('Qty', { exact: true });
+    await qty.fill('2');
+    await qty.press('Enter');
+    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2\n');
     await page.getByRole('button', { name: 'Installed' }).click();
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath 60W [installed]\n');
+    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2 [installed]\n');
     await page.locator('body').press('ControlOrMeta+z');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath 60W\n');
+    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2\n');
     await page.locator('body').press('ControlOrMeta+z');
     await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath\n');
     await page.locator('body').press('ControlOrMeta+Shift+z');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath 60W\n');
+    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2\n');
   });
 
   test('picker search, Enter to add, favourites and recent', async ({ page }) => {
@@ -169,10 +169,14 @@ test.describe('desktop', () => {
     await plus(page, 'O01').click();
     await page.getByRole('searchbox', { name: 'Search presets' }).fill('candy');
     await page.keyboard.press('Enter');
-    await expect(outline(page)).toHaveValue(/O01 Outlet\n  Pathway lights ~20W\n$/);
-    await plus(page, 'O01').click();
+    await expect(outline(page)).toHaveValue(/O01 Outlet\n  Pathway lights\n$/);
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('heading', { name: 'Recent' })).toBeVisible();
+    // The view re-centres on the new item one frame after adding; under heavy test load a
+    // click can land mid-move, so retry until the picker is open.
+    await expect(async () => {
+      await plus(page, 'O01').click();
+      await expect(dialog.getByRole('heading', { name: 'Recent' })).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 8000 });
     await dialog.getByRole('button', { name: 'Star Fan as a favourite' }).first().click();
     await expect(dialog.getByRole('heading', { name: 'Favourites' })).toBeVisible();
     await page.keyboard.press('Escape');

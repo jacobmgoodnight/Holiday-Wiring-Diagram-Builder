@@ -96,13 +96,6 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
       <div className="fields">
         <Field label="Name" value={node.label} wide onCommit={(v) => onPatch({ label: v.replace(/[[\]]/g, '').trim() })} />
         {isLoad && <Field label="Qty" type="number" value={str(node.qty)} onCommit={num('qty')} />}
-        <Field label={node.wattsApprox ? 'Watts (est.)' : 'Watts'} type="number" value={str(node.watts)} onCommit={num('watts')} />
-        {node.watts !== undefined && (
-          <label className="check">
-            <input type="checkbox" checked={!!node.wattsApprox} onChange={(e) => onPatch({ wattsApprox: e.target.checked || undefined })} />
-            estimate
-          </label>
-        )}
         {(node.kind === 'cord' || isLoad) && <Field label="Length ft" type="number" value={str(node.lengthFt)} onCommit={num('lengthFt')} />}
         {hasSockets && <Field label="Sockets" type="number" value={str(node.outputs)} placeholder="?" onCommit={num('outputs')} />}
         {node.kind === 'outlet' && (
@@ -136,8 +129,9 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
       </div>
 
       <details className="more">
-        <summary>Tags and notes</summary>
+        <summary>More details</summary>
         <div className="fields">
+          <Field label="Storage spot" wide value={node.storage ?? ''} placeholder="Tote 3, garage shelf…" onCommit={(v) => onPatch({ storage: v.trim() || undefined })} />
           <Field
             label="Tags (comma separated)"
             wide
@@ -150,6 +144,7 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
             }
           />
           <Field label="Notes (not in the outline)" wide multiline value={node.notes ?? ''} onCommit={(v) => onPatch({ notes: v.trim() || undefined })} />
+          <Field label="Watts (optional)" type="number" value={str(node.watts)} onCommit={num('watts')} />
         </div>
       </details>
 
