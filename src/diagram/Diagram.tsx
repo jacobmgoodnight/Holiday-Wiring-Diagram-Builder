@@ -355,11 +355,16 @@ function DiagramInner(props: DiagramProps) {
       const top = ln.y * zoom + y;
       const inView = left >= 0 && top >= 40 && left + span * zoom <= el.clientWidth && top + ln.h * zoom <= el.clientHeight;
       if (!inView) {
-        // Zoom out just enough to show the next column too, but never below readable.
-        const fitSpan = (el.clientWidth - 24) / span;
+        // Zoom out just enough to show the next column too, but never below readable. If the
+        // two still do not fit, put the item's left edge just inside the left side, so the item
+        // is always fully visible and the start of the next column shows.
+        const cw = el.clientWidth;
+        const ch = el.clientHeight;
+        const fitSpan = (cw - 24) / span;
         const z = Math.max(READABLE_ZOOM, Math.min(zoom, fitSpan));
-        const cx = span * z <= el.clientWidth ? ln.x + span / 2 : ln.x + ln.w / 2;
-        rf.setCenter(cx, ln.y + ln.h / 2, { zoom: z, duration: 0 });
+        const vx = span * z <= cw - 24 ? (cw - span * z) / 2 - ln.x * z : 16 - ln.x * z;
+        const vy = Math.min(ch / 2, Math.max(56, ch / 2)) - (ln.y + ln.h / 2) * z;
+        rf.setViewport({ x: vx, y: vy, zoom: z }, { duration: 0 });
       }
     });
     return () => cancelAnimationFrame(id);
