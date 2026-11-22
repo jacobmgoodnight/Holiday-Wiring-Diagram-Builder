@@ -97,7 +97,7 @@ and install/teardown.
 | 3 ⏸ | *Deferred at your request (not focusing on watts/load).* Load roll-ups, 80 % circuit badges, shared circuits, rating warnings, pixel helper, Needs-attention view | Fixture + Christmas fixture show correct estimates |
 | 4 ✅ | Field mode checklist, statuses, restore points, copy-from-last-year, tags, new-this-year | |
 | 5 ✅ | Custom presets, equipment library autocomplete, label sheet, JSON/CSV, storage locations | |
-| 6 | Optional photo overlay (seam: per-node `position` map keyed by view id) | |
+| 6 ✅ | Photo overlay (seam: per-node `position` map keyed by view id) | |
 
 ## Decisions made (tell me if any are wrong)
 
@@ -249,3 +249,37 @@ Decisions:
 
 Not yet: photo per item (listed under Christmas fields), signal links from the diagram,
 Phase 6 photo overlay.
+
+## Phase 6 status: photo overlay
+
+Designed after the popular holiday-light planner apps, but every mark on the photo is an
+item of the same plan (same IDs, same panel, same undo), not a separate drawing.
+
+* **Photo mode** (Plan / Photo / Checklist). "📷 Add a photo" opens the camera or library on
+  a phone; "Try it with a sample house" loads an illustration. Photos are shrunk to 2048 px
+  JPEG and stored on this device. Several photos per display (front, back yard…).
+* **Draw lights**: pick C9, mini, icicle, pixel, pathway or tree lights and tap along the
+  house; Done. Bulbs are drawn along the run in colours from the name (warm white, red and
+  green, multicolor…), with icicle drops for icicles. Zoomed out, every Nth bulb is drawn so
+  each stays visible.
+* **Night** darkens the photo and makes the bulbs glow. **Wiring** draws dashed lines from
+  each item to the nearest placed item it is plugged into.
+* **+ Add item** (picker; lights go straight to drawing) and **Place from plan** (everything
+  not on this photo yet) place with one tap. Drag markers and run corners to adjust
+  (corners show on the selected run).
+* **Measure**: tap both ends of something you know (a 16 ft garage door) and enter the
+  length. Runs then show "~49 ft", and the panel offers "Use ~49 ft as length".
+* **Plug in from the photo**: select an item, Move…, tap what it plugs into.
+* Pinch or scroll to zoom, drag to pan, Fit. Undo covers every photo change.
+
+Decisions:
+
+* **D23. Placements are model-only fields** (`placements[viewId]` as 0..1 fractions), so they
+  never touch the outline, survive text edits and photo resizing, and are copied for next
+  year with the views.
+* **D24. New items added on the photo start "not plugged in yet"**; wiring is never guessed.
+* **D25. Instructions get their own strip above the photo** and the item panel docks below
+  it, so neither ever covers a spot you need to tap.
+* **D26. Photos are stored once and shared** by copies and restore points; removing a photo
+  view keeps the image until the display is deleted (so Undo can bring it back). JSON
+  backups (format v2) include the photos; v1 backups still import.

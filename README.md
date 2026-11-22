@@ -5,9 +5,9 @@ Type an indented outline, or (from Phase 2) tap preset icons, and see the power 
 
 > **Planning aid only**, not an electrical inspection.
 
-**Status: Phase 5 (library, labels, exports) complete; Phase 3 (load checks) deferred.**
-Build a plan by typing or tapping, install and tear it down from a checklist, copy it for
-next year, print cord labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
+**Status: all phases complete except Phase 3 (load checks), deferred.** Build a plan by
+typing or tapping, see it on a photo of your house with glowing lights, install and tear it
+down from a checklist, copy it for next year, print cord labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
 data model, phases and the decisions that need your review.
 
 ## Outline in 30 seconds
@@ -43,6 +43,9 @@ O01 Front porch outlet @15A GFCI
 * **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
   drag it, or drag a preset from the palette onto a socket.
 * **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
+* **Photo** (top toggle): add a photo of your house (or the sample house), draw light runs
+  along the roofline, drop items where they go, and press 🌙 Night to preview. Measure a
+  known length once and every run shows its feet.
 * **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
   boxes. Ticks update the same plan the diagram shows.
 * **⋯ menu**: Copy for next year, Changes since last year, Restore points, Cord and plug
@@ -99,7 +102,8 @@ src/ui/Checklist.tsx, Dialogs.tsx     field mode, restore/copy/changes dialogs
 src/export/labels.ts, LabelSheet.tsx  cord and plug labels (paper and label maker)
 src/export/csv.ts, backup.ts          CSV export, JSON backup and safe import
 src/presets/custom.ts                 save as preset, outline autocomplete
+src/photo/                            photo overlay: geometry, actions, editor, pane
 src/store/db.ts                       IndexedDB (Dexie), serialized writes
 public/sw.js                          offline app shell
-tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance, field mode, library/labels/backup
+tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance, field mode, library/labels/backup, photo
 ```
