@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
-import { newDisplay, outline } from './helpers';
+import { expectText, newDisplay } from './helpers';
 
 /** Screen point for a spot on the sample house (1600 × 1000 drawing). */
 async function at(page: Page, x: number, y: number): Promise<[number, number]> {
@@ -43,7 +43,7 @@ test('draw lights, place items, measure, and plug in from the photo', async ({ p
   await expect(page.locator('.photo-banner')).toContainText('3 points');
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByRole('button', { name: 'L01 C9 roofline run light run' })).toBeVisible();
-  await expect(outline(page)).toHaveValue(/\n\nC9 roofline run\n$/);
+  await expectText(page, /\n\nC9 roofline run\n$/);
 
   // Place the existing outlet from the plan, and add an inflatable.
   await page.getByRole('button', { name: /Place from plan/ }).click();
@@ -57,10 +57,10 @@ test('draw lights, place items, measure, and plug in from the photo', async ({ p
   await expect(inflatable).toBeVisible();
 
   // Plug the inflatable into the outlet by tapping it on the photo.
-  await page.getByRole('region', { name: 'Details for L02' }).getByRole('button', { name: 'Move…' }).click();
+  await page.getByRole('region', { name: 'Selected L02' }).getByRole('button', { name: 'Move…' }).click();
   await expect(page.locator('.photo-banner')).toContainText('Tap what L02 plugs into');
   await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
-  await expect(outline(page)).toContainText('O01 Outlet\n  Inflatable\n');
+  await expectText(page, { contains: 'O01 Outlet\n  Inflatable\n' });
   await expect(page.locator('.wire-line')).toHaveCount(1);
 
   // Measure the 16 ft garage door; the run now shows its length and can use it.
@@ -71,20 +71,20 @@ test('draw lights, place items, measure, and plug in from the photo', async ({ p
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByRole('button', { name: /Scale set/ })).toBeVisible();
   await tap(page, 455, 310); // on the roof edge, along the run
-  const panel = page.getByRole('region', { name: 'Details for L01' });
+  const panel = page.getByRole('region', { name: 'Selected L01' });
   const use = panel.getByRole('button', { name: /^Use ~\d+ ft as length$/ });
   await expect(use).toBeVisible();
   const ft = Number(/~(\d+)/.exec((await use.textContent())!)![1]);
   expect(ft).toBeGreaterThan(40);
   expect(ft).toBeLessThan(60);
   await use.click();
-  await expect(outline(page)).toContainText(`C9 roofline run ~${ft}ft`);
+  await expectText(page, { contains: `C9 roofline run ~${ft}ft` });
 
   // Night look, and undo takes the length back off.
   await page.getByRole('button', { name: /Night/ }).click();
   await expect(page.locator('.photo.night')).toHaveCount(1);
   await page.locator('body').press('ControlOrMeta+z');
-  await expect(outline(page)).not.toContainText(`~${ft}ft`);
+  await expectText(page, { notContains: `~${ft}ft` });
 });
 
 test('photo and placements survive a reload; a backup carries the photo', async ({ page }) => {

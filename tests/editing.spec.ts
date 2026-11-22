@@ -1,5 +1,5 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { newDisplay, outline } from './helpers';
+import { expectText, getText, newDisplay, setText } from './helpers';
 
 const node = (page: Page, label: string) => page.locator(`.react-flow__node[aria-label^="${label}"]`);
 const plus = (page: Page, id: string) => page.getByRole('button', { name: `Plug something into ${id}`, exact: true });
@@ -46,7 +46,7 @@ test.describe('phone', () => {
   test('acceptance: rebuild the O02 branch with taps only in under a minute', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await expect(outline(page)).toHaveValue(/O01 Outlet\n$/);
+    await expectText(page, /O01 Outlet\n$/);
 
     let taps = 0;
     let pans = 0;
@@ -74,7 +74,7 @@ test.describe('phone', () => {
     }
     const seconds = (Date.now() - started) / 1000;
 
-    const v = await outline(page).inputValue();
+    const v = await getText(page);
     expect(v.split('\n').slice(1).join('\n')).toBe(
       'O01 Outlet\n  K01 2-port smart plug\n    C01 Extension cord\n      S01 4-way splitter\n        Animated prop\n        Spotlight\n        Spotlight\n        T01 Tote\n          Projector\n          Fan\n          S02 3-way splitter\n',
     );
@@ -87,16 +87,16 @@ test.describe('phone', () => {
   test('Move… re-plugs with two taps and can be undone', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await outline(page).fill('# Move\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
+    await setText(page, '# Move\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
     await node(page, 'S01').click();
     // Move C01 into S01's free socket 2.
     await node(page, 'C01').click();
     await page.getByRole('button', { name: 'Move…' }).click();
     await expect(page.locator('.move-banner')).toBeVisible();
     await node(page, 'Unused socket 2 on S01').click();
-    await expect(outline(page)).toHaveValue('# Move\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n    C01 cord\n');
+    await expectText(page, '# Move\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n    C01 cord\n');
     await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
-    await expect(outline(page)).toHaveValue('# Move\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
+    await expectText(page, '# Move\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
   });
 });
 
@@ -106,7 +106,7 @@ test.describe('desktop', () => {
   test('drag an item onto a free socket to re-plug it; undo restores', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await outline(page).fill('# Drag\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
+    await setText(page, '# Drag\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
     await page.getByRole('button', { name: 'Fit', exact: true }).click();
     const from = node(page, 'C01');
     const to = node(page, 'Unused socket 2 on S01');
@@ -117,50 +117,50 @@ test.describe('desktop', () => {
     await page.mouse.move(b.x + 30, b.y + b.height / 2, { steps: 12 });
     await expect(page.locator('.dn.drop')).toHaveCount(1);
     await page.mouse.up();
-    await expect(outline(page)).toHaveValue('# Drag\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n    C01 cord\n');
+    await expectText(page, '# Drag\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n    C01 cord\n');
     await page.keyboard.press('ControlOrMeta+z');
-    await expect(outline(page)).toHaveValue('# Drag\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
+    await expectText(page, '# Drag\nO01 Porch\n  S01 3-way splitter\n    Spotlight\n  C01 cord\n');
   });
 
   test('a short drag that lands nowhere changes nothing', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await outline(page).fill('# Drag\nO01 Porch\n  C01 cord\n');
+    await setText(page, '# Drag\nO01 Porch\n  C01 cord\n');
     const a = (await node(page, 'C01').boundingBox())!;
     await page.mouse.move(a.x + 20, a.y + 10);
     await page.mouse.down();
     await page.mouse.move(a.x + 20, a.y + 200, { steps: 8 });
     await page.mouse.up();
-    await expect(outline(page)).toHaveValue('# Drag\nO01 Porch\n  C01 cord\n');
+    await expectText(page, '# Drag\nO01 Porch\n  C01 cord\n');
   });
 
   test('drop a preset from the palette onto a socket', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await outline(page).fill('# Palette\nO01 Porch\n  S01 2-way splitter\n');
+    await setText(page, '# Palette\nO01 Porch\n  S01 2-way splitter\n');
     await page.getByRole('button', { name: 'Fit', exact: true }).click();
     await page.locator('.pal', { hasText: 'Inflatable' }).dragTo(node(page, 'Unused socket 2 on S01'));
-    await expect(outline(page)).toHaveValue('# Palette\nO01 Porch\n  S01 2-way splitter\n    2: Inflatable\n');
+    await expectText(page, '# Palette\nO01 Porch\n  S01 2-way splitter\n    2: Inflatable\n');
   });
 
   test('panel edits write one outline line; undo spans typing and diagram edits', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await outline(page).fill('# Panel\nO01 Porch\n  Wreath\n');
+    await setText(page, '# Panel\nO01 Porch\n  Wreath\n');
     await page.waitForTimeout(1100); // end the typing burst so the next edit is its own undo step
     await node(page, 'L01').click();
     const qty = page.getByLabel('Qty', { exact: true });
     await qty.fill('2');
     await qty.press('Enter');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2\n');
+    await expectText(page, '# Panel\nO01 Porch\n  Wreath x2\n');
     await page.getByRole('button', { name: 'Installed' }).click();
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2 [installed]\n');
+    await expectText(page, '# Panel\nO01 Porch\n  Wreath x2 [installed]\n');
     await page.locator('body').press('ControlOrMeta+z');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2\n');
+    await expectText(page, '# Panel\nO01 Porch\n  Wreath x2\n');
     await page.locator('body').press('ControlOrMeta+z');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath\n');
+    await expectText(page, '# Panel\nO01 Porch\n  Wreath\n');
     await page.locator('body').press('ControlOrMeta+Shift+z');
-    await expect(outline(page)).toHaveValue('# Panel\nO01 Porch\n  Wreath x2\n');
+    await expectText(page, '# Panel\nO01 Porch\n  Wreath x2\n');
   });
 
   test('picker search, Enter to add, favourites and recent', async ({ page }) => {
@@ -169,7 +169,7 @@ test.describe('desktop', () => {
     await plus(page, 'O01').click();
     await page.getByRole('searchbox', { name: 'Search presets' }).fill('candy');
     await page.keyboard.press('Enter');
-    await expect(outline(page)).toHaveValue(/O01 Outlet\n  Pathway lights\n$/);
+    await expectText(page, /O01 Outlet\n  Pathway lights\n$/);
     const dialog = page.getByRole('dialog');
     // The view re-centres on the new item one frame after adding; under heavy test load a
     // click can land mid-move, so retry until the picker is open.
@@ -186,12 +186,12 @@ test.describe('desktop', () => {
   test('a loop is refused with a message', async ({ page }) => {
     await page.goto('./');
     await newDisplay(page);
-    await outline(page).fill('# Loop\nO01 Porch\n  S01 2-way splitter\n    C01 cord\n');
+    await setText(page, '# Loop\nO01 Porch\n  S01 2-way splitter\n    C01 cord\n');
     await page.getByRole('button', { name: 'Fit', exact: true }).click();
     await node(page, 'S01').click();
     await page.getByRole('button', { name: 'Move…' }).click();
     await node(page, 'C01').click();
-    await expect(outline(page)).toHaveValue('# Loop\nO01 Porch\n  S01 2-way splitter\n    C01 cord\n');
+    await expectText(page, '# Loop\nO01 Porch\n  S01 2-way splitter\n    C01 cord\n');
     // S01, C01 and S01's free socket cannot be targets.
     await expect(page.locator('.dn.blocked')).toHaveCount(3);
     await expect(page.getByRole('status').filter({ hasText: 'Moved' })).toHaveCount(0);

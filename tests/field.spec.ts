@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
-import { newDisplay, outline } from './helpers';
+import { expectText, newDisplay, setText } from './helpers';
 
 const halloween = readFileSync(new URL('../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 const christmas = readFileSync(new URL('../fixtures/christmas-2026.outline.txt', import.meta.url), 'utf8');
@@ -8,7 +8,7 @@ const christmas = readFileSync(new URL('../fixtures/christmas-2026.outline.txt',
 async function load(page: Page, text: string) {
   await page.goto('./');
   await newDisplay(page);
-  await outline(page).fill(text);
+  await setText(page, text);
   await page.waitForTimeout(1100); // end the typing burst: later edits are their own undo steps
 }
 
@@ -30,8 +30,8 @@ test('install checklist ticks write status into the same plan', async ({ page })
   await expect(o1.getByRole('checkbox', { name: 'C02 black cord: installed' })).toHaveCount(0);
   // Back on the plan: the outline line carries the status, and the item is selected.
   await o1.locator('.cl-row', { hasText: 'K01' }).getByRole('button', { name: 'Show K01 on the diagram' }).click();
-  await expect(outline(page)).toContainText('    left: C02 black cord 10ft [verified]\n');
-  await expect(page.getByRole('region', { name: 'Details for K01' })).toBeVisible();
+  await expectText(page, { contains: '    left: C02 black cord 10ft [verified]\n' });
+  await expect(page.getByRole('region', { name: 'Selected K01' })).toBeVisible();
 });
 
 test('teardown runs back to the wall and remembers what is packed', async ({ page }) => {
@@ -42,7 +42,7 @@ test('teardown runs back to the wall and remembers what is packed', async ({ pag
   await expect(o3.locator('.cl-row').last()).toContainText('O03');
   await o3.getByRole('checkbox', { name: /^S07 .*: packed$/ }).check();
   await expect(page.locator('.cl-total')).toHaveText('1 of 55 packed');
-  await expect(outline(page)).toHaveCount(0); // field mode shows the checklist only
+  await expect(page.locator('.react-flow')).toHaveCount(0); // field mode shows the checklist only
   await page.waitForTimeout(600);
   await page.reload();
   await page.getByRole('button', { name: 'Checklist', exact: true }).click();
@@ -57,17 +57,17 @@ test('copy for next year: fresh statuses, new items flagged, changes listed', as
   await expect(dialog.getByLabel('Name')).toHaveValue('Halloween 2027');
   await dialog.getByRole('button', { name: 'Make the copy' }).click();
   await expect(page.getByRole('combobox', { name: 'Display' })).toHaveValue(/.+/);
-  await expect(outline(page)).toHaveValue(/^# Halloween 2027\n/);
-  await expect(outline(page)).not.toContainText('[installed]');
+  await expectText(page, /^# Halloween 2027\n/);
+  await expectText(page, { notContains: '[installed]' });
   // The original is untouched.
   await expect(page.getByRole('combobox', { name: 'Display' }).locator('option', { hasText: 'Halloween 2026' })).toHaveCount(1);
 
   // Find S03 from the checklist, then plug something into it from its panel.
   await page.getByRole('button', { name: 'Checklist', exact: true }).click();
   await page.getByRole('button', { name: 'Show S03 on the diagram' }).click();
-  await page.getByRole('region', { name: 'Details for S03' }).getByRole('button', { name: '+ Plug something in' }).click();
+  await page.getByRole('region', { name: 'Selected S03' }).getByRole('button', { name: '+ Plug in' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Add Inflatable', exact: true }).first().click();
-  await expect(outline(page)).toContainText('      3: Inflatable [new]\n');
+  await expectText(page, { contains: '      3: Inflatable [new]\n' });
 
   await menu(page, 'Changes since last year…');
   const changes = page.getByRole('dialog', { name: 'Changes since Halloween 2026' });
@@ -81,13 +81,13 @@ test('restore points: save, change, restore, and undo the restore', async ({ pag
   await page.getByRole('button', { name: 'Save a restore point now' }).click();
   await expect(page.getByRole('dialog').locator('.snap-list li')).not.toHaveCount(0);
   await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
-  await outline(page).fill('# Restore\nO01 Porch\n  Wreath\n  Inflatable\n');
+  await setText(page, '# Restore\nO01 Porch\n  Wreath\n  Inflatable\n');
   await menu(page, 'Restore points…');
   const manual = page.getByRole('dialog').locator('.snap-list li', { hasText: 'Saved by you' });
   await manual.getByRole('button', { name: 'Restore' }).click();
-  await expect(outline(page)).toHaveValue('# Restore\nO01 Porch\n  Wreath\n');
+  await expectText(page, '# Restore\nO01 Porch\n  Wreath\n');
   await page.locator('.toast').getByRole('button', { name: 'Undo' }).click();
-  await expect(outline(page)).toHaveValue('# Restore\nO01 Porch\n  Wreath\n  Inflatable\n');
+  await expectText(page, '# Restore\nO01 Porch\n  Wreath\n  Inflatable\n');
 });
 
 test('tag filter fades everything else', async ({ page }) => {

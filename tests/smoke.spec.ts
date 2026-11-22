@@ -1,17 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { newDisplay, outline } from './helpers';
+import { closeText, expectText, newDisplay, openText, outline, setText } from './helpers';
 
 const halloween = readFileSync(new URL('../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 
 
 test('outline → diagram, live, with saving and export', async ({ page, isMobile }) => {
   await page.goto('./');
-  await expect(outline(page)).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Display' })).toBeVisible();
   // Starts with the generic example.
   await expect(page.locator('.dn').first()).toBeVisible();
 
-  await outline(page).fill(halloween);
+  await setText(page, halloween);
   await expect(page.locator('.counts')).toHaveText('55 items · 46 power · 4 signal');
 
   if (isMobile) {
@@ -33,50 +33,54 @@ test('outline → diagram, live, with saving and export', async ({ page, isMobil
   await expect(page.locator('.dn:not(.ghost)')).toHaveCount(11);
   await expect(page.locator('.dn.ghost')).toHaveCount(4);
 
-  // Tapping a diagram item highlights its outline line.
+  // Tapping a diagram item selects it and shows its actions.
   // The view fits one frame after switching; retry if a click lands mid-jump under load.
   await expect(async () => {
     await page.locator('.dn', { hasText: 'S01' }).click();
-    await expect(page.locator('.gl.g-sel')).toHaveText('37', { timeout: 1000 });
+    await expect(page.getByRole('region', { name: 'Selected S01' })).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 8000 });
 
-  // A typing mistake shows inline without losing text.
+  // In "Edit as text", the selected item's line is highlighted, and a typing mistake shows
+  // inline without losing text.
+  await openText(page);
+  await expect(page.locator('.gl.g-sel')).toHaveText('37');
   await outline(page).fill(halloween + '     odd indent\n');
   await expect(page.locator('.gl.g-warning')).toHaveCount(1);
-  await expect(outline(page)).toHaveValue(halloween + '     odd indent\n');
+  await closeText(page);
+  await expectText(page, halloween + '     odd indent\n');
 
   // Saved locally: survives an immediate reload (before the IndexedDB autosave fires).
   await page.reload();
-  await expect(outline(page)).toHaveValue(halloween + '     odd indent\n');
+  await expectText(page, halloween + '     odd indent\n');
 
   // SVG export downloads a file.
   const download = page.waitForEvent('download');
-  await page.getByLabel('Export').click();
-  await page.getByRole('button', { name: 'SVG' }).click();
+  await page.getByLabel('More diagram actions').click();
+  await page.getByRole('menuitem', { name: 'Download SVG' }).click();
   expect((await download).suggestedFilename()).toBe('halloween-2026.svg');
 });
 
 test('a second display is kept separately', async ({ page }) => {
   await page.goto('./');
-  await expect(outline(page)).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Display' })).toBeVisible();
   await newDisplay(page);
-  await outline(page).fill('# Garage test\nO01 Garage outlet\n  Inflatable 120W\n');
+  await setText(page, '# Garage test\nO01 Garage outlet\n  Inflatable 120W\n');
   await expect(page.getByRole('combobox', { name: 'Display' })).toContainText('Garage test');
   await page.getByRole('combobox', { name: 'Display' }).selectOption({ label: 'Christmas 2026 (example)' });
-  await expect(outline(page)).toHaveValue(/^# Christmas 2026 \(example\)/);
+  await expectText(page, /^# Christmas 2026 \(example\)/);
   await page.getByRole('combobox', { name: 'Display' }).selectOption({ label: 'Garage test' });
-  await expect(outline(page)).toHaveValue('# Garage test\nO01 Garage outlet\n  Inflatable 120W\n');
+  await expectText(page, '# Garage test\nO01 Garage outlet\n  Inflatable 120W\n');
 });
 
 test('deleting a display asks in the page, and Cancel keeps it', async ({ page }) => {
   await page.goto('./');
   await newDisplay(page);
-  await outline(page).fill('# Keep me\nO01 Porch\n');
+  await setText(page, '# Keep me\nO01 Porch\n');
   await page.getByLabel('More display actions').click();
   await page.getByRole('menuitem', { name: 'Delete this display' }).click();
   const ask = page.getByRole('dialog', { name: 'Delete display' });
   await ask.getByRole('button', { name: 'Cancel' }).click();
-  await expect(outline(page)).toHaveValue('# Keep me\nO01 Porch\n');
+  await expectText(page, '# Keep me\nO01 Porch\n');
   await page.getByLabel('More display actions').click();
   await page.getByRole('menuitem', { name: 'Delete this display' }).click();
   await ask.getByRole('button', { name: 'Delete display' }).click();

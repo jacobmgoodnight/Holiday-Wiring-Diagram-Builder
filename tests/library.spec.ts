@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
-import { newDisplay, outline } from './helpers';
+import { closeText, expectText, newDisplay, openDetails, openText, outline, setText } from './helpers';
 
 const halloween = readFileSync(new URL('../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 
 async function load(page: Page, text: string) {
   await page.goto('./');
   await newDisplay(page);
-  await outline(page).fill(text);
+  await setText(page, text);
   await page.waitForTimeout(1100);
 }
 
@@ -19,21 +19,23 @@ const menu = async (page: Page, item: string) => {
 test('save an item as a preset, add it, autocomplete it, remove it', async ({ page }) => {
   await load(page, '# Lib\nO01 Porch\n  C01 green cord 25ft\n  S01 3-way splitter\n');
   await page.locator('.react-flow__node[aria-label^="C01"]').click();
-  const panel = page.getByRole('region', { name: 'Details for C01' });
+  const panel = await openDetails(page, 'C01');
   await panel.getByRole('button', { name: 'Save as preset' }).click();
   await panel.getByLabel('Preset name').fill('Green 25');
   await panel.getByRole('button', { name: 'Save preset' }).click();
   await expect(page.locator('.toast')).toContainText('Saved "Green 25"');
 
   // In the picker under My presets.
+  await page.keyboard.press('Escape'); // close the details sheet on phones
   await page.locator('.react-flow__node[aria-label^="S01"]').click();
-  await page.getByRole('region', { name: 'Details for S01' }).getByRole('button', { name: '+ Plug something in' }).click();
+  await page.getByRole('region', { name: 'Selected S01' }).getByRole('button', { name: '+ Plug in' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'My presets' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Add Green 25', exact: true }).first().click();
-  await expect(outline(page)).toHaveValue('# Lib\nO01 Porch\n  C01 green cord 25ft\n  S01 3-way splitter\n    C02 green cord 25ft\n');
+  await expectText(page, '# Lib\nO01 Porch\n  C01 green cord 25ft\n  S01 3-way splitter\n    C02 green cord 25ft\n');
 
-  // Outline autocomplete offers it while typing.
+  // "Edit as text" autocomplete offers it while typing.
+  await openText(page);
   await outline(page).focus();
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type('    gre');
@@ -41,11 +43,12 @@ test('save an item as a preset, add it, autocomplete it, remove it', async ({ pa
   await expect(sug).toBeVisible();
   await sug.click();
   await expect(outline(page)).toHaveValue(/\n    green cord 25ft$/);
+  await closeText(page);
 
   // Remove it from My presets.
   await page.getByRole('button', { name: 'Fit', exact: true }).click();
   await page.locator('.react-flow__node[aria-label^="S01"]').click();
-  await page.getByRole('region', { name: 'Details for S01' }).getByRole('button', { name: '+ Plug something in' }).click();
+  await page.getByRole('region', { name: 'Selected S01' }).getByRole('button', { name: '+ Plug in' }).click();
   await dialog.getByRole('button', { name: 'Remove my preset Green 25' }).click();
   await page.getByRole('dialog', { name: 'Remove preset' }).getByRole('button', { name: 'Remove preset' }).click();
   await expect(dialog.getByRole('heading', { name: 'My presets' })).toHaveCount(0);
@@ -94,15 +97,15 @@ test('back up all displays and import them again without overwriting', async ({ 
 
   await page.getByLabel('Backup file').setInputFiles(path);
   await expect(page.locator('.toast')).toContainText('already here came in as copies');
-  await expect(outline(page)).toHaveValue(/^# .* \(imported\)\n/);
+  await expectText(page, /^# .* \(imported\)\n/);
   // The original is still there, unchanged.
   await page.getByRole('combobox', { name: 'Display' }).selectOption({ label: 'Halloween 2026' });
-  await expect(outline(page)).toHaveValue(halloween);
+  await expectText(page, halloween);
 });
 
 test('a file that is not a backup is refused with a reason', async ({ page }) => {
   await page.goto('./');
-  await expect(outline(page)).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Display' })).toBeVisible();
   await page.getByLabel('Backup file').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
   await expect(page.locator('.toast')).toContainText('not a Wiring Sketchpad backup');
 });
