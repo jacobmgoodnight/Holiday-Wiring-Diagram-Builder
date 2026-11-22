@@ -8,27 +8,31 @@ interface Props {
   /** Your own presets ("Save as preset"). */
   custom: Preset[];
   onDeleteCustom: (p: Preset) => void;
+  /** What usually goes here (shown first). */
+  suggested?: Preset[];
   onPick: (preset: Preset) => void;
   onClose: () => void;
 }
 
 const finePointer = () => window.matchMedia('(pointer: fine)').matches;
 
-export function PresetPicker({ title, custom, onDeleteCustom, onPick, onClose }: Props) {
+export function PresetPicker({ title, custom, onDeleteCustom, suggested = [], onPick, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [favs, setFavs] = useState(getFavorites);
   const recent = useMemo(() => getRecent().map((id) => presetById(id, custom)).filter((p): p is Preset => !!p), [custom]);
   const sheet = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
 
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    // Keyboard users start typing straight away; phones keep the keyboard closed.
+    // Keyboard users start typing straight away; phones keep the keyboard closed. Only on open.
     if (finePointer()) search.current?.focus();
     else sheet.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   const results = searchPresets(query, [...custom, ...PRESETS]);
   const favorites = favs.map((id) => presetById(id, custom)).filter((p): p is Preset => !!p);
@@ -46,14 +50,14 @@ export function PresetPicker({ title, custom, onDeleteCustom, onPick, onClose }:
           ✕
         </button>
       )}
-      <button
+      {!p.id.startsWith('like:') && <button
         type="button"
         className={`tile-star${favs.includes(p.id) ? ' on' : ''}`}
         aria-label={favs.includes(p.id) ? `Unstar ${p.name}` : `Star ${p.name} as a favourite`}
         onClick={() => setFavs(toggleFavorite(p.id))}
       >
         {favs.includes(p.id) ? '★' : '☆'}
-      </button>
+      </button>}
     </div>
   );
 
@@ -87,6 +91,12 @@ export function PresetPicker({ title, custom, onDeleteCustom, onPick, onClose }:
           aria-label="Search presets"
         />
         <div className="sheet-body">
+          {!query && suggested.length > 0 && (
+            <section>
+              <h3>Suggested here</h3>
+              <div className="tiles row">{suggested.map((p) => tile(p, `s-${p.id}`))}</div>
+            </section>
+          )}
           {!query && recent.length > 0 && (
             <section>
               <h3>Recent</h3>
