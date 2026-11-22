@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { toneOf } from '../diagram/layout';
 import { iconFor } from '../presets/custom';
 import type { NodePatch } from '../model/actions';
@@ -28,6 +28,8 @@ interface Props {
   onDelete: (withChildren: boolean) => void;
   onSaveAsPreset: (name: string, icon: string) => void;
   onClose: () => void;
+  /** Extra actions for the current view (e.g. photo placement). */
+  extra?: ReactNode;
 }
 
 /** Text/number input that commits on blur or Enter; re-keyed when the stored value changes. */
@@ -71,7 +73,7 @@ const numOrUndef = (v: string): number | undefined | null => {
   return Number.isFinite(n) && n >= 0 ? n : null; // null = invalid, ignore
 };
 
-export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, onMove, onUnplug, onDelete, onSaveAsPreset, onClose }: Props) {
+export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, onMove, onUnplug, onDelete, onSaveAsPreset, onClose, extra }: Props) {
   const [saving, setSaving] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [presetIcon, setPresetIcon] = useState('');
@@ -185,6 +187,7 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
         </form>
       )}
 
+      {extra && <div className="panel-actions photo-extra">{extra}</div>}
       <div className="panel-actions">
         <button type="button" className="primary" onClick={onAddChild}>
           + Plug something in

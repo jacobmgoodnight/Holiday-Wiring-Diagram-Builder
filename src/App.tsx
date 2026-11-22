@@ -23,7 +23,7 @@ import { type ChecklistMode, type ChecklistRow, checklist } from './model/checkl
 import { displayStats } from './model/graph';
 import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
-import type { Display, NodeKind } from './model/types';
+import type { Display, NodeKind, Placement } from './model/types';
 import { type BuildResult, buildDisplay } from './outline';
 import { syncFromModel } from './outline/sync';
 import { presetFromNode, presetText, suggest } from './presets/custom';
@@ -40,7 +40,10 @@ import {
   listCustomPresets,
   saveCustomPreset,
   listSnapshots,
+  allPhotos,
   getDisplay,
+  getPhoto,
+  savePhoto,
   getMeta,
   lineIdsFromStored,
   listDisplays,
@@ -53,12 +56,19 @@ import { Checklist } from './ui/Checklist';
 import { ChangesDialog, CopyDialog, RestoreDialog } from './ui/Dialogs';
 import { LabelSheet } from './ui/LabelSheet';
 import { NodePanel } from './ui/NodePanel';
+import { addPlacedNode, addView, removeView, setPlacement, updateView } from './photo/actions';
+import { type Pt, runLengthFt } from './photo/geometry';
+import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
+import type { PhotoIntent } from './photo/PhotoEditor';
+import { PhotoPane } from './photo/PhotoPane';
 import { OutlineEditor } from './ui/OutlineEditor';
 import { Palette } from './ui/Palette';
 import { PresetPicker } from './ui/PresetPicker';
 import { ThemeButton } from './ui/ThemeButton';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
+/** Load categories drawn as light runs on the photo (others are placed as markers). */
+const LIGHT_RUNS = new Set(['c9', 'mini', 'icicle', 'pixel', 'pathway', 'tree']);
 const OVERALL = '__overall__';
 /** Automatic restore points: at most one per display per this interval while editing. */
 const AUTO_SNAPSHOT_MS = 10 * 60 * 1000;
@@ -153,7 +163,13 @@ export function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   /** True while another display is being opened: edits wait so they cannot land in the wrong one. */
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<'plan' | 'checklist'>('plan');
+  const [mode, setMode] = useState<'plan' | 'photo' | 'checklist'>('plan');
+  const [viewId, setViewId] = useState<string | undefined>();
+  const [intent, setIntent] = useState<PhotoIntent | undefined>();
+  const [photoPicker, setPhotoPicker] = useState(false);
+  const [busyPhoto, setBusyPhoto] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const loadingPhotos = useRef(new Set<string>());
   const [clMode, setClMode] = useState<ChecklistMode>('install');
   const [hideDone, setHideDone] = useState(false);
   const [tag, setTag] = useState('');
@@ -181,6 +197,8 @@ export function App() {
     setPicker(null);
     setDialog(null);
     setTag('');
+    setIntent(undefined);
+    setViewId(undefined);
     // Phones start on one outlet (readable); desktops start on the whole display.
     const clusters = clusterList(next.result.display);
     setView(isPhone() && clusters.length ? clusters[0].id : OVERALL);
@@ -397,8 +415,9 @@ export function App() {
           doRedo();
         }
       }
-      if (e.key === 'Escape' && !picker) {
-        if (moving) setMoving(undefined);
+      if (e.key === 'Escape' && !picker && !photoPicker) {
+        if (intent) setIntent(undefined);
+        else if (moving) setMoving(undefined);
         else if (selected && !inOtherField) setSelected(undefined);
       }
     };
@@ -407,6 +426,18 @@ export function App() {
   });
 
   const display = doc?.result.display;
+  // Object URLs for this display's photos (loaded once, kept for the session).
+  useEffect(() => {
+    for (const v of display?.views ?? []) {
+      if (photoUrls[v.photoId] || loadingPhotos.current.has(v.photoId)) continue;
+      loadingPhotos.current.add(v.photoId);
+      void getPhoto(v.photoId).then((p) => {
+        if (p) setPhotoUrls((m) => ({ ...m, [v.photoId]: URL.createObjectURL(p.blob) }));
+      });
+    }
+  }, [display?.views, photoUrls]);
+  const views = display?.views ?? [];
+  const photoView = views.find((v) => v.id === viewId) ?? views[0];
   const clusters = useMemo(() => (display ? clusterList(display) : []), [display]);
   const activeView = view !== OVERALL && !clusters.some((c) => c.id === view) ? OVERALL : view;
   const layout = useMemo(() => (display ? layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView }) : null), [display, activeView]);
@@ -542,7 +573,7 @@ export function App() {
 
   const exportBackup = async () => {
     await flush();
-    const backup = makeBackup(await allDisplays());
+    const backup = makeBackup(await allDisplays(), new Date(), await exportBackupPhotos());
     const day = new Date().toISOString().slice(0, 10);
     downloadText(JSON.stringify(backup, null, 1), `wiring-sketchpad-backup-${day}.json`, 'application/json');
     showToast(`Backup of ${backup.displays.length} display${backup.displays.length === 1 ? '' : 's'} downloaded. Keep it somewhere safe.`);
@@ -554,6 +585,9 @@ export function App() {
       await flush();
       const existing = new Set((await listDisplays()).map((d) => d.id));
       const planned = planImport(existing, backup.displays, newId);
+      for (const p of backup.photos ?? []) {
+        if (!(await getPhoto(p.id))) await savePhoto({ id: p.id, blob: base64ToBlob(p.base64, p.type), width: p.width, height: p.height, createdAt: Date.now() });
+      }
       for (const rec of planned) await saveDisplay(rec);
       await refreshList();
       if (planned.length) await switchTo(planned[0].id);
@@ -562,6 +596,78 @@ export function App() {
     } catch (e) {
       showToast(e instanceof BackupError ? e.message : 'Could not read that file.');
     }
+  };
+
+  const addPhoto = async (source: Blob, name: string) => {
+    if (!display) return;
+    setBusyPhoto(true);
+    try {
+      const img = await prepareImage(source);
+      const photoId = `ph-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      if (persist.current) await savePhoto({ id: photoId, blob: img.blob, width: img.width, height: img.height, createdAt: Date.now() });
+      setPhotoUrls((m) => ({ ...m, [photoId]: URL.createObjectURL(img.blob) }));
+      const id = `v-${Date.now().toString(36)}`;
+      act((d) => addView(d, { id, name, photoId, width: img.width, height: img.height }));
+      setViewId(id);
+      setFitNonce((n) => n + 1);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not add that photo.');
+    } finally {
+      setBusyPhoto(false);
+    }
+  };
+
+  const addSampleHouse = async () => {
+    try {
+      const res = await fetch('./sample-house.svg');
+      await addPhoto(await res.blob(), 'Sample house');
+    } catch {
+      showToast('Could not load the sample house.');
+    }
+  };
+
+  const removePhotoView = (v: { id: string; name: string }) => {
+    if (!window.confirm(`Remove the photo "${v.name}"? Items stay in your plan; only their spots on this photo are removed. You can undo this.`)) return;
+    act((d) => removeView(d, v.id));
+    setViewId(undefined);
+    setIntent(undefined);
+    showToast(`Removed "${v.name}"`, true);
+  };
+
+  const isNewHere = (d: Display) => (d.copiedFrom ? true : undefined);
+
+  const placePoint = (it: PhotoIntent, at: Pt) => {
+    if (!photoView || it.type !== 'place') return;
+    setIntent(undefined);
+    if (it.nodeId) {
+      const id = it.nodeId;
+      act((d) => setPlacement(d, id, photoView.id, { kind: 'point', x: at[0], y: at[1] }), () => setSelected(id));
+    } else if (it.presetId) {
+      const p = presetById(it.presetId, custom);
+      if (!p) return;
+      noteUsed(p.id);
+      act((d) => addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, { kind: 'point', x: at[0], y: at[1] }), (r) => setSelected(r.nodeId));
+    }
+  };
+
+  const finishRun = (it: PhotoIntent, points: Pt[]) => {
+    if (!photoView || it.type !== 'draw') return;
+    setIntent(undefined);
+    const placement = { kind: 'path' as const, points };
+    if (it.nodeId) {
+      const id = it.nodeId;
+      act((d) => setPlacement(d, id, photoView.id, placement), () => setSelected(id));
+    } else if (it.presetId) {
+      const p = presetById(it.presetId, custom);
+      if (!p) return;
+      noteUsed(p.id);
+      act((d) => addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, placement), (r) => setSelected(r.nodeId));
+    }
+  };
+
+  const exportBackupPhotos = async () => {
+    const all = await allPhotos();
+    return Promise.all(all.map(async (p) => ({ id: p.id, type: p.blob.type || 'image/jpeg', width: p.width, height: p.height, base64: await blobToBase64(p.blob) })));
   };
 
   const removeCurrent = async () => {
@@ -667,10 +773,13 @@ export function App() {
 
       <nav className="views" aria-label="View">
         <div className="seg" role="group" aria-label="Mode">
-          <button type="button" className={mode === 'plan' ? 'on' : ''} aria-pressed={mode === 'plan'} onClick={() => { setMode('plan'); setFitNonce((n) => n + 1); }}>
+          <button type="button" className={mode === 'plan' ? 'on' : ''} aria-pressed={mode === 'plan'} onClick={() => { setMode('plan'); setIntent(undefined); setFitNonce((n) => n + 1); }}>
             Plan
           </button>
-          <button type="button" className={mode === 'checklist' ? 'on' : ''} aria-pressed={mode === 'checklist'} onClick={() => { setMode('checklist'); setMoving(undefined); }}>
+          <button type="button" className={mode === 'photo' ? 'on' : ''} aria-pressed={mode === 'photo'} onClick={() => { setMode('photo'); setMoving(undefined); setFitNonce((n) => n + 1); }}>
+            Photo
+          </button>
+          <button type="button" className={mode === 'checklist' ? 'on' : ''} aria-pressed={mode === 'checklist'} onClick={() => { setMode('checklist'); setMoving(undefined); setIntent(undefined); }}>
             Checklist
           </button>
         </div>
@@ -720,7 +829,54 @@ export function App() {
         </main>
       ) : (
       <main className="split">
-        <section className="pane-diagram" aria-label="Diagram">
+        <section className={`pane-diagram${mode === 'photo' ? ' photo-mode' : ''}`} aria-label={mode === 'photo' ? 'Photo' : 'Diagram'}>
+          {mode === 'photo' ? (
+            <PhotoPane
+              display={display}
+              views={views}
+              view={photoView}
+              photoUrl={photoView ? photoUrls[photoView.photoId] : undefined}
+              onPickView={(id) => {
+                setViewId(id);
+                setIntent(undefined);
+                setFitNonce((n) => n + 1);
+              }}
+              onAddPhoto={(f, name) => void addPhoto(f, name)}
+              onAddSample={() => void addSampleHouse()}
+              onRemoveView={removePhotoView}
+              busyPhoto={busyPhoto}
+              selectedId={selected}
+              onSelect={(id) => {
+                setSelected(id);
+                if (id) setOutlineScroll((n) => n + 1);
+              }}
+              intent={intent}
+              setIntent={setIntent}
+              onAddItem={() => setPhotoPicker(true)}
+              onPlacePoint={placePoint}
+              onFinishRun={finishRun}
+              onSetScale={(fpp) => {
+                if (!photoView) return;
+                setIntent(undefined);
+                act((d) => updateView(d, photoView.id, { feetPerPx: fpp }));
+                showToast('Scale saved: light runs now show their length', true);
+              }}
+              onMovePlacement={(id, placement) => photoView && act((d) => setPlacement(d, id, photoView.id, placement))}
+              onPlugInto={(id, parent) => {
+                setIntent(undefined);
+                act(
+                  (d) => replug(d, id, { parent }),
+                  (r) => {
+                    setSelected(r.nodeId);
+                    if (!r.warning) showToast(`Plugged ${id} into ${parent}`, true);
+                  },
+                );
+              }}
+              blocked={intent?.type === 'move' ? subtreeOf(intent.nodeId) : undefined}
+              fitKey={`${doc.id}:${fitNonce}`}
+            />
+          ) : (
+          <>
           {canDrag && <Palette selectedId={selected} custom={custom} onPick={(p) => selected && addPreset(p, { parent: selected })} />}
           <Diagram
             layout={layout}
@@ -744,7 +900,9 @@ export function App() {
             onExportSvg={exportSvg}
             onExportPng={exportPng}
           />
-          {selNode && !moving && (
+          </>
+          )}
+          {selNode && !moving && !intent && (
             <NodePanel
               key={selNode.id}
               node={selNode}
@@ -754,6 +912,10 @@ export function App() {
               onKind={(kind: NodeKind) => act((d) => changeKind(d, selNode.id, kind), (r) => setSelected(r.nodeId))}
               onAddChild={() => setPicker({ parent: selNode.id })}
               onMove={() => {
+                if (mode === 'photo') {
+                  setIntent({ type: 'move', nodeId: selNode.id });
+                  return;
+                }
                 setMoving(selNode.id);
                 showToast(`Now tap where ${selNode.id} should plug in`);
               }}
@@ -765,6 +927,19 @@ export function App() {
               }}
               onSaveAsPreset={(name, icon) => void saveAsPreset(selNode.id, name, icon)}
               onClose={() => setSelected(undefined)}
+              extra={
+                mode === 'photo' && photoView ? (
+                  <PhotoNodeActions
+                    placement={selNode.placements?.[photoView.id]}
+                    lengthFt={selNode.placements?.[photoView.id] ? runLengthFt(selNode.placements[photoView.id], photoView) : undefined}
+                    isLight={selNode.kind === 'load' && LIGHT_RUNS.has(selNode.category ?? '')}
+                    onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
+                    onDraw={() => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
+                    onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
+                    onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
+                  />
+                ) : undefined
+              }
             />
           )}
         </section>
@@ -802,6 +977,19 @@ export function App() {
           onClose={() => setLabelsOpen(false)}
         />
       )}
+      {photoPicker && (
+        <PresetPicker
+          title="Add to the photo"
+          custom={custom}
+          onDeleteCustom={(p) => void deletePreset(p)}
+          onClose={() => setPhotoPicker(false)}
+          onPick={(p) => {
+            setPhotoPicker(false);
+            // Lights are drawn along the house; everything else is placed with a tap.
+            setIntent(p.kind === 'load' && LIGHT_RUNS.has(p.category ?? '') ? { type: 'draw', presetId: p.id, name: p.name } : { type: 'place', presetId: p.id, name: p.name });
+          }}
+        />
+      )}
       {picker && (
         <PresetPicker
           title={targetTitle(picker)}
@@ -832,5 +1020,41 @@ export function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function PhotoNodeActions(props: {
+  placement?: Placement;
+  lengthFt?: number;
+  isLight: boolean;
+  onPlace: () => void;
+  onDraw: () => void;
+  onRemove: () => void;
+  onUseLength: (ft: number) => void;
+}) {
+  const { placement, lengthFt, isLight } = props;
+  const ft = lengthFt !== undefined ? Math.round(lengthFt) : undefined;
+  return (
+    <>
+      {isLight ? (
+        <button type="button" className="primary" onClick={props.onDraw}>
+          ✏️ {placement?.kind === 'path' ? 'Redraw on photo' : 'Draw on photo'}
+        </button>
+      ) : (
+        <button type="button" className={placement ? '' : 'primary'} onClick={props.onPlace}>
+          📍 {placement ? 'Move on photo' : 'Place on photo'}
+        </button>
+      )}
+      {placement && (
+        <button type="button" onClick={props.onRemove}>
+          Remove from photo
+        </button>
+      )}
+      {ft !== undefined && ft > 0 && (
+        <button type="button" onClick={() => props.onUseLength(ft)}>
+          Use ~{ft} ft as length
+        </button>
+      )}
+    </>
   );
 }
