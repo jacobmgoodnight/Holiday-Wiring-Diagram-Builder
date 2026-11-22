@@ -33,6 +33,8 @@ interface Props {
   onPlugInto: (nodeId: string, parentId: string) => void;
   blocked?: Set<string>;
   fitKey: string;
+  /** Phone: the selection bar replaces the photo actions while something is selected. */
+  hideActions?: boolean;
 }
 
 export function PhotoPane(props: Props) {
@@ -138,7 +140,7 @@ export function PhotoPane(props: Props) {
         fitKey={props.fitKey}
       />
 
-      {!props.intent && (
+      {!props.intent && !props.hideActions && (
         <div className="photo-actions">
           <button type="button" className="primary" onClick={props.onAddItem}>
             + Add item

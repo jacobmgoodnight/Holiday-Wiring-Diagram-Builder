@@ -123,11 +123,17 @@ button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2p
 .chip { flex: none; border-radius: 999px; min-height: 36px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-.split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 38%) 1fr; grid-template-areas: 'outline diagram'; gap: 0; }
-.pane-diagram { grid-area: diagram; min-width: 0; min-height: 0; border-left: 1px solid var(--line); }
-.pane-outline { grid-area: outline; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 8px 8px 8px 16px; }
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+/* Wide screens: the inspector is always there, so selecting never resizes the canvas. */
+.split.with-inspector { grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); }
+@media (max-width: 999px) {
+  /* Narrower windows: it floats over the canvas, only while something is selected. */
+  .split.with-inspector { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .split.with-inspector .inspector { position: absolute; top: 0; right: 0; bottom: 0; width: min(340px, 60%); z-index: 8; box-shadow: -8px 0 24px rgb(0 0 0 / 0.12); }
+  .split.with-inspector:not(.has-selection) .inspector { display: none; }
+}
+.pane-diagram { min-width: 0; min-height: 0; }
 @media (max-width: 720px) {
-  .app { height: auto; min-height: 100dvh; }
   .bar { padding: 6px 16px; }
   .save, .counts { display: none; }
   .bar { flex-wrap: nowrap; }
@@ -135,8 +141,7 @@ button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2p
   .bar-title select { max-width: 100%; width: 100%; }
   .bar-actions button { padding: 0 10px; }
   .split { display: flex; flex-direction: column; }
-  .pane-diagram { height: 56dvh; border-left: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .pane-outline { height: 60dvh; padding: 8px 16px; }
+  .pane-diagram { flex: 1; border-top: 1px solid var(--line); }
 }
 
 /* Outline editor */
@@ -220,7 +225,7 @@ button.danger { color: var(--err); }
 .palette-hint { flex: none; color: var(--muted); font-size: 0.8rem; padding-right: 4px; }
 .pal { flex: none; min-height: 34px; font-size: 0.82rem; display: inline-flex; gap: 6px; align-items: center; cursor: grab; }
 
-.panel { position: absolute; left: 12px; bottom: 12px; z-index: 5; width: min(400px, calc(100% - 24px)); max-height: calc(100% - 80px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
+.panel { padding: 4px 0 0; }
 .panel-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .panel-head select { flex: 1; min-width: 0; }
 .panel-close { min-width: 40px; }
@@ -261,9 +266,6 @@ button.danger { color: var(--err); }
 .toast button { background: transparent; color: var(--panel); border-color: var(--panel); min-height: 36px; }
 
 @media (max-width: 720px) {
-  .pane-diagram { height: auto; }
-  .pane-diagram .diagram { height: 56dvh; flex: none; }
-  .panel { position: static; width: auto; max-height: none; margin: 8px 16px; box-shadow: none; }
   .sheet-backdrop { align-items: flex-end; }
   .sheet { border-radius: 14px 14px 0 0; max-height: 78dvh; }
   .tiles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
@@ -398,17 +400,12 @@ button.big { min-height: 52px; font-size: 1rem; }
 .wide-btn { width: 100%; margin: 6px 0 10px; }
 .photo-extra { margin-top: 6px; }
 @media (max-width: 720px) {
-  .pane-diagram .photo-pane, .pane-diagram .photo-empty { height: 64dvh; flex: none; }
   .photo-toggles > button { padding: 0 8px; }
 }
 
-/* In photo mode the item panel sits below the photo (never over a marker). */
-.pane-diagram.photo-mode .panel { position: static; width: auto; max-height: 42%; flex: none; margin: 0; border-radius: 0; border-width: 1px 0 0; box-shadow: none; }
 .photo-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
 .photo-actions button { min-width: 0; padding: 0 6px; font-size: 0.88rem; line-height: 1.15; }
-@media (max-width: 720px) {
-  .pane-diagram.photo-mode .panel { max-height: none; margin: 8px 16px; border-radius: 12px; border-width: 1px; }
-}
+
 
 /* The instruction banner gets its own strip above the photo, so it never covers a spot you
    need to tap (on a phone it wraps to several lines). */
@@ -419,3 +416,58 @@ button.big { min-height: 52px; font-size: 1rem; }
 
 .confirm-row { display: flex; gap: 8px; justify-content: flex-end; }
 button.danger-solid { background: var(--err); border-color: var(--err); color: #fff; }
+
+/* Plan experience: full-width canvas, selection bar, inspector, find, fold */
+.diagram-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.diagram-wrap .diagram { flex: 1; min-height: 0; }
+.inspector { min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 10px 14px 24px; display: flex; flex-direction: column; gap: 10px; }
+.selbar { display: flex; flex-direction: column; gap: 8px; }
+.selbar-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.selbar-name { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; padding: 0 4px; font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.selbar-name:hover { text-decoration: underline; }
+.selbar-close { min-width: 40px; padding: 0; }
+.selbar-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.selbar-actions button { min-height: 40px; font-size: 0.88rem; padding: 0 10px; }
+.panel-head .field.wide { width: 100%; }
+.dn-fold { position: absolute; right: -16px; top: 50%; transform: translateY(-50%); min-height: 26px; height: 26px; padding: 0 8px; border-radius: 13px; border: 1.5px solid currentColor; background: var(--panel); color: inherit; font: 700 12px/1 system-ui, sans-serif; cursor: pointer; z-index: 2; box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
+.dn-rename { width: calc(100% - 4px); margin-top: 2px; min-height: 26px; font: inherit; font-size: 13px; padding: 2px 6px; border: 1.5px solid var(--sel); border-radius: 6px; background: var(--panel); color: var(--text); }
+.find { position: absolute; top: 60px; left: 12px; z-index: 6; width: min(380px, calc(100% - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.2); padding: 8px; }
+.find input { width: calc(100% - 44px); min-height: 40px; font: inherit; font-size: 16px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+.find-close { position: absolute; top: 8px; right: 8px; min-width: 36px; min-height: 40px; padding: 0; }
+.find-results { list-style: none; margin: 6px 0 0; padding: 0; max-height: 50vh; overflow: auto; }
+.find-results button { width: 100%; text-align: left; border: 0; border-radius: 8px; min-height: 40px; background: transparent; }
+.find-results button.on, .find-results button:hover { background: var(--bg); }
+.minimap { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.react-flow__minimap { background: var(--panel); }
+.react-flow__minimap-mask { fill: rgb(100 116 139 / 0.18); }
+.export-menu { min-width: 200px; }
+.export-menu button { text-align: left; border: 0; min-height: 40px; }
+.export-menu button:hover { background: var(--bg); }
+.sheet.tall { height: min(86dvh, 860px); }
+.sheet.tall .sheet-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.sheet.tall .outline { flex: 1; min-height: 0; }
+.text-help { margin: 0; }
+.text-done { display: flex; justify-content: flex-end; }
+.legend { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.legend li { display: flex; align-items: center; gap: 10px; }
+.swatch { width: 28px; height: 16px; border-radius: 4px; border: 1.5px solid; flex: none; }
+.swatch.line { height: 0; border: 0; border-top: 2px dashed var(--signal); }
+.keys { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.keys th { text-align: left; font-weight: 400; padding: 4px 10px 4px 0; white-space: nowrap; vertical-align: top; }
+.keys td { padding: 4px 0; }
+kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--bg); }
+@media (max-width: 720px) {
+  .pane-diagram .photo-pane, .pane-diagram .photo-empty { flex: 1; min-height: 0; }
+  .dg-tools .zoom { display: none; }
+  .pane-diagram > .selbar { flex: none; padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); box-shadow: 0 -4px 14px rgb(0 0 0 / 0.08); }
+  .selbar-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .selbar-actions button { flex: none; }
+  .find { top: 56px; }
+}
+
+.inspector-empty { display: flex; flex-direction: column; gap: 10px; }
+.inspector-empty h2 { margin: 0; font-size: 1.05rem; }
+.inspector-empty p { margin: 0; }
+.tips { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 0.9rem; color: var(--muted); }
+.tips b { color: var(--text); font-weight: 600; }
+.inspector-empty button { align-self: flex-start; }

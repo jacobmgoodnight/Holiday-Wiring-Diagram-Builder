@@ -4,6 +4,7 @@ import {
   EdgeLabelRenderer,
   type EdgeProps,
   Handle,
+  MiniMap,
   type Node,
   type NodeChangeset,
   type NodeProps,
@@ -18,6 +19,7 @@ import '@xyflow/react/dist/style.css';
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Target } from '../model/actions';
 import type { Cluster, Layout, LayoutNode } from './layout';
+import { TONE_COLORS } from './svg';
 
 type ItemNode = Node<{ ln: LayoutNode; selected: boolean }, 'item'>;
 type ClusterNode = Node<{ cluster: Cluster }, 'cluster'>;
@@ -37,14 +39,44 @@ interface Ctx {
   blocked: Set<string>;
   dropTarget?: string;
   dimmed?: Set<string>;
+  /** Item being renamed on the canvas. */
+  renamingId?: string;
+  onRename: (id: string, label: string | null) => void;
+  onUnfold: (id: string) => void;
 }
-const DiagramCtx = createContext<Ctx>({ onAdd: () => undefined, moving: false, blocked: new Set() });
+const DiagramCtx = createContext<Ctx>({ onAdd: () => undefined, moving: false, blocked: new Set(), onRename: () => undefined, onUnfold: () => undefined });
+
+/** On-canvas rename (mind-map style): Enter or leaving the field saves, Esc cancels. */
+function RenameInput({ id, label, onDone }: { id: string; label: string; onDone: (label: string | null) => void }) {
+  const done = useRef(false);
+  const finish = (v: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(v);
+  };
+  return (
+    <input
+      className="dn-rename nodrag nopan"
+      aria-label={`Rename ${id}`}
+      defaultValue={label}
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(e.currentTarget.value);
+        else if (e.key === 'Escape') finish(null);
+      }}
+      onBlur={(e) => finish(e.currentTarget.value)}
+    />
+  );
+}
 
 const isBlocked = (ln: LayoutNode, blocked: Set<string>) => (ln.nodeId ? blocked.has(ln.nodeId) : !!ln.parentId && blocked.has(ln.parentId));
 
 const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
   const { ln, selected } = data;
-  const { onAdd, moving, blocked, dropTarget, dimmed } = useContext(DiagramCtx);
+  const { onAdd, moving, blocked, dropTarget, dimmed, renamingId, onRename, onUnfold } = useContext(DiagramCtx);
   const id = ln.nodeId;
   const ghost = ln.type === 'ghost';
   const cls = [
@@ -68,6 +100,11 @@ const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
           </span>{' '}
           Unused socket
         </div>
+      ) : id && renamingId === id ? (
+        <>
+          <b className="dn-id">{id}</b>
+          <RenameInput id={id} label={ln.label ?? ''} onDone={(v) => onRename(id, v)} />
+        </>
       ) : (
         ln.lines.map((line, i) =>
           i === 0 && id && line.startsWith(id) ? (
@@ -83,7 +120,21 @@ const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
         )
       )}
       {ln.meta && <div className="dn-meta">{ln.meta}</div>}
-      {!ghost && !moving && id && (
+      {!ghost && id && ln.collapsed !== undefined && (
+        <button
+          type="button"
+          className="dn-fold nodrag"
+          aria-label={`Unfold ${id} (${ln.collapsed} hidden)`}
+          title="Unfold"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnfold(id);
+          }}
+        >
+          +{ln.collapsed}
+        </button>
+      )}
+      {!ghost && !moving && id && ln.collapsed === undefined && (
         <button
           type="button"
           className="dn-add nodrag"
@@ -147,7 +198,7 @@ export interface DiagramProps {
   /** Changes when the view should be refitted (view switch, display switch). */
   fitKey: string;
   /** Changes when the diagram should bring the selected item into view. */
-  centerRequest?: number;
+  centerRequest?: { n: number; next: boolean };
   /** Open the preset picker for a socket or item (parent null = top level). */
   onAdd: (target: Target) => void;
   /** Re-plug an item (drag on desktop, or Move… mode). */
@@ -167,6 +218,17 @@ export interface DiagramProps {
   redo: { can: boolean; run: () => void };
   onExportSvg: () => void;
   onExportPng: () => void;
+  /** Item being renamed on the canvas, and what to do when renaming ends (null = cancelled). */
+  renamingId?: string;
+  onStartRename: (id: string) => void;
+  onRename: (id: string, label: string | null) => void;
+  onUnfold: (id: string) => void;
+  onFoldAll: () => void;
+  onUnfoldAll: () => void;
+  onFind: () => void;
+  onHelp: () => void;
+  /** Overview map in the corner (large screens). */
+  showMinimap: boolean;
 }
 
 export function Diagram(props: DiagramProps) {
@@ -190,6 +252,17 @@ function DiagramInner(props: DiagramProps) {
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | undefined>();
   const [dragBlocked, setDragBlocked] = useState<Set<string>>(new Set());
+  const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
+  const [mapHidden, setMapHidden] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setBoxSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // The overview map only earns its corner when the plan cannot fit on screen at readable size.
+  const tooBig = layout.width * READABLE_ZOOM > boxSize.w || layout.height * READABLE_ZOOM > boxSize.h;
 
   const blocked = useMemo(() => (movingId ? subtreeOf(movingId) : dragBlocked), [movingId, subtreeOf, dragBlocked]);
   const byId = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout]);
@@ -273,9 +346,11 @@ function DiagramInner(props: DiagramProps) {
       const el = box.current;
       if (!ln || !el) return;
       const { x, y, zoom } = rf.getViewport();
-      // Keep the item and the column to its right (its free sockets) in view, so the next
-      // tap is usually already on screen. Instant, so a quick next tap never hits a moving target.
-      const span = ln.w + NEXT_COLUMN;
+      // After adding, keep the item and the column to its right (its free sockets) in view, so
+      // the next tap is usually already on screen. A plain selection only needs the item itself
+      // (moving the canvas under the pointer would break a double-click). Instant, so a quick
+      // next tap never hits a moving target.
+      const span = centerRequest.next ? ln.w + NEXT_COLUMN : ln.w;
       const left = ln.x * zoom + x;
       const top = ln.y * zoom + y;
       const inView = left >= 0 && top >= 40 && left + span * zoom <= el.clientWidth && top + ln.h * zoom <= el.clientHeight;
@@ -288,7 +363,7 @@ function DiagramInner(props: DiagramProps) {
       }
     });
     return () => cancelAnimationFrame(id);
-  }, [centerRequest]);
+  }, [centerRequest?.n]);
 
   /** The item or socket under a flow-space point. */
   const hit = (x: number, y: number, exclude?: string): LayoutNode | undefined =>
@@ -302,8 +377,17 @@ function DiagramInner(props: DiagramProps) {
   };
 
   const ctx = useMemo<Ctx>(
-    () => ({ onAdd: (t) => props.onAdd(t), moving: !!movingId || !!drag, blocked, dropTarget, dimmed: props.dimmed }),
-    [props.onAdd, movingId, drag, blocked, dropTarget, props.dimmed],
+    () => ({
+      onAdd: (t) => props.onAdd(t),
+      moving: !!movingId || !!drag,
+      blocked,
+      dropTarget,
+      dimmed: props.dimmed,
+      renamingId: props.renamingId,
+      onRename: props.onRename,
+      onUnfold: props.onUnfold,
+    }),
+    [props.onAdd, movingId, drag, blocked, dropTarget, props.dimmed, props.renamingId, props.onRename, props.onUnfold],
   );
 
   return (
@@ -362,6 +446,11 @@ function DiagramInner(props: DiagramProps) {
             setDragBlocked(new Set());
             if (ln?.nodeId && target) props.onReplug(ln.nodeId, target);
           }}
+          onNodeDoubleClick={(_, n) => {
+            const ln = n.type === 'item' ? (n as ItemNode).data.ln : undefined;
+            if (ln?.type === 'item' && ln.nodeId && !movingId) props.onStartRename(ln.nodeId);
+          }}
+          zoomOnDoubleClick={false}
           onNodeClick={(_, n) => {
             if (n.type !== 'item') return;
             const ln = (n as ItemNode).data.ln;
@@ -390,27 +479,56 @@ function DiagramInner(props: DiagramProps) {
             <button type="button" className="primary" onClick={() => props.onAdd({ parent: null })}>
               + Outlet
             </button>
-            <button type="button" aria-label="Zoom out" onClick={() => rf.zoomOut({ duration: 120 })}>
+            <button type="button" onClick={props.onFind} aria-label="Find an item" title="Find (/)">
+              🔍
+            </button>
+            <button type="button" className="zoom" aria-label="Zoom out" onClick={() => rf.zoomOut({ duration: 120 })}>
               ⊖
             </button>
-            <button type="button" aria-label="Zoom in" onClick={() => rf.zoomIn({ duration: 120 })}>
+            <button type="button" className="zoom" aria-label="Zoom in" onClick={() => rf.zoomIn({ duration: 120 })}>
               ⊕
             </button>
             <button type="button" onClick={fitReadable}>
               Fit
             </button>
             <details className="export">
-              <summary aria-label="Export">⤓</summary>
-              <div className="export-menu">
-                <button type="button" onClick={props.onExportSvg}>
-                  SVG
-                </button>
-                <button type="button" onClick={props.onExportPng}>
-                  PNG
-                </button>
+              <summary aria-label="More diagram actions">⋯</summary>
+              <div className="export-menu" role="menu">
+                {[
+                  ['Fold all branches', props.onFoldAll],
+                  ['Unfold all', props.onUnfoldAll],
+                  ...(props.showMinimap && tooBig ? [[mapHidden ? 'Show overview map' : 'Hide overview map', () => setMapHidden((h) => !h)]] : []),
+                  ['Download SVG', props.onExportSvg],
+                  ['Download PNG', props.onExportPng],
+                  ['Shortcuts and colours', props.onHelp],
+                ].map(([text, run]) => (
+                  <button
+                    key={text as string}
+                    type="button"
+                    role="menuitem"
+                    onClick={(e) => {
+                      const det = e.currentTarget.closest('details');
+                      if (det) det.open = false;
+                      (run as () => void)();
+                    }}
+                  >
+                    {text as string}
+                  </button>
+                ))}
               </div>
             </details>
           </Panel>
+          {props.showMinimap && tooBig && !mapHidden && layout.nodes.length > 0 && (
+            <MiniMap
+              position="bottom-right"
+              pannable
+              zoomable
+              ariaLabel="Overview map"
+              nodeColor={(n) => (n.type === 'item' ? TONE_COLORS[(n as ItemNode).data.ln.tone].stroke : 'transparent')}
+              nodeStrokeColor={(n) => (n.type === 'cluster' ? 'var(--cluster-line)' : 'transparent')}
+              className="minimap"
+            />
+          )}
           {movingId && (
             <Panel position="bottom-center" className="move-banner" role="status">
               Tap the socket or item to plug <b>{movingId}</b> into.

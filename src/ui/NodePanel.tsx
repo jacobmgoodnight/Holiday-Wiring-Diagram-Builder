@@ -1,5 +1,4 @@
-import { type ReactNode, useState } from 'react';
-import { toneOf } from '../diagram/layout';
+import { useState } from 'react';
 import { iconFor } from '../presets/custom';
 import type { NodePatch } from '../model/actions';
 import type { DisplayNode, NodeKind, Status } from '../model/types';
@@ -22,14 +21,10 @@ interface Props {
   plugged: boolean;
   onPatch: (patch: NodePatch) => void;
   onKind: (kind: NodeKind) => void;
-  onAddChild: () => void;
-  onMove: () => void;
   onUnplug: () => void;
-  onDelete: (withChildren: boolean) => void;
+  /** Delete it together with everything plugged into it. */
+  onDeleteBranch: () => void;
   onSaveAsPreset: (name: string, icon: string) => void;
-  onClose: () => void;
-  /** Extra actions for the current view (e.g. photo placement). */
-  extra?: ReactNode;
 }
 
 /** Text/number input that commits on blur or Enter; re-keyed when the stored value changes. */
@@ -73,7 +68,8 @@ const numOrUndef = (v: string): number | undefined | null => {
   return Number.isFinite(n) && n >= 0 ? n : null; // null = invalid, ignore
 };
 
-export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, onMove, onUnplug, onDelete, onSaveAsPreset, onClose, extra }: Props) {
+/** Details of the selected item. Its main actions live in the selection bar. */
+export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onDeleteBranch, onSaveAsPreset }: Props) {
   const [saving, setSaving] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [presetIcon, setPresetIcon] = useState('');
@@ -88,17 +84,16 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
   return (
     <section className="panel" aria-label={`Details for ${node.id}`}>
       <div className="panel-head">
-        <span className={`badge tone-${toneOf(node)}`}>{node.id}</span>
-        <select aria-label="Kind" value={node.kind} onChange={(e) => onKind(e.target.value as NodeKind)}>
-          {NODE_KINDS.map((k) => (
-            <option key={k} value={k}>
-              {KIND_NAMES[k]}
-            </option>
-          ))}
-        </select>
-        <button type="button" className="panel-close" onClick={onClose} aria-label="Close details">
-          ✕
-        </button>
+        <label className="field wide">
+          <span>Kind</span>
+          <select aria-label="Kind" value={node.kind} onChange={(e) => onKind(e.target.value as NodeKind)}>
+            {NODE_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {KIND_NAMES[k]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="fields">
@@ -187,29 +182,19 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
         </form>
       )}
 
-      {extra && <div className="panel-actions photo-extra">{extra}</div>}
       <div className="panel-actions">
-        <button type="button" className="primary" onClick={onAddChild}>
-          + Plug something in
-        </button>
-        <button type="button" onClick={onMove}>
-          Move…
-        </button>
         {plugged && (
           <button type="button" onClick={onUnplug}>
             Unplug
           </button>
         )}
-        <button type="button" className="danger" onClick={() => onDelete(false)}>
-          Delete
-        </button>
         {!saving && (
           <button type="button" onClick={() => setSaving(true)}>
             Save as preset
           </button>
         )}
         {below > 0 && (
-          <button type="button" className="danger" onClick={() => onDelete(true)}>
+          <button type="button" className="danger" onClick={onDeleteBranch}>
             Delete with {below} below
           </button>
         )}

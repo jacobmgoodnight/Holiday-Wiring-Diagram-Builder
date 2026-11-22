@@ -13,6 +13,7 @@ import {
   addNode,
   changeKind,
   deleteNode,
+  duplicateNode,
   homeLink,
   replug,
   subtreeIds,
@@ -21,6 +22,7 @@ import {
 } from './model/actions';
 import { type ChecklistMode, type ChecklistRow, checklist } from './model/checklist';
 import { displayStats } from './model/graph';
+import { type Direction, navigate, parentOf } from './model/navigate';
 import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
 import type { Display, NodeKind, Placement } from './model/types';
@@ -55,13 +57,17 @@ import {
 import { Checklist } from './ui/Checklist';
 import { ChangesDialog, CopyDialog, RestoreDialog } from './ui/Dialogs';
 import { LabelSheet } from './ui/LabelSheet';
+import { FindBox } from './ui/FindBox';
+import { HelpSheet } from './ui/HelpSheet';
 import { NodePanel } from './ui/NodePanel';
+import { SelectionBar } from './ui/SelectionBar';
+import { TextSheet } from './ui/TextSheet';
+import { suggestionsFor } from './presets/suggest';
 import { addPlacedNode, addView, removeView, setPlacement, updateView } from './photo/actions';
 import { type Pt, runLengthFt } from './photo/geometry';
 import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
 import type { PhotoIntent } from './photo/PhotoEditor';
 import { PhotoPane } from './photo/PhotoPane';
-import { OutlineEditor } from './ui/OutlineEditor';
 import { Palette } from './ui/Palette';
 import { PresetPicker } from './ui/PresetPicker';
 import { Sheet } from './ui/Sheet';
@@ -144,6 +150,35 @@ function readPhase0(): string | null {
   }
 }
 
+const FOLD_KEY = (id: string) => `wiring-sketchpad.folded.${id}`;
+function readFolded(id: string): Set<string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(FOLD_KEY(id)) ?? '[]');
+    return new Set(Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+function writeFolded(id: string, folded: Set<string>) {
+  try {
+    localStorage.setItem(FOLD_KEY(id), JSON.stringify([...folded]));
+  } catch {
+    /* per-device convenience only */
+  }
+}
+
+/** Phone layout (bottom selection bar, details in a sheet) vs. side inspector. */
+function usePhone(): boolean {
+  const [phone, setPhone] = useState(isPhone);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)');
+    const on = () => setPhone(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone;
+}
+
 function targetTitle(t: Target): string {
   if (t.parent === null) return 'Add an outlet or item';
   return t.port ? `Plug into ${t.parent} · socket ${t.port}` : `Plug into ${t.parent}`;
@@ -156,10 +191,20 @@ export function App() {
   const [save, setSave] = useState<SaveState>('saved');
   const [view, setView] = useState<string>(OVERALL);
   const [selected, setSelected] = useState<string | undefined>();
-  const [outlineScroll, setOutlineScroll] = useState(0);
-  const [centerRequest, setCenterRequest] = useState<number | undefined>();
+  /** Bring the selected item into view; `next` also shows the column to its right (after adding). */
+  const [centerRequest, setCenterRequest] = useState<{ n: number; next: boolean } | undefined>();
+  const requestCenter = (next: boolean) => setCenterRequest((c) => ({ n: (c?.n ?? 0) + 1, next }));
   const [fitNonce, setFitNonce] = useState(0);
   const [picker, setPicker] = useState<Target | null>(null);
+  /** The item next to the socket being filled, for "Another …" suggestions. */
+  const [pickerLike, setPickerLike] = useState<string | undefined>();
+  const [renaming, setRenaming] = useState<string | undefined>();
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const [findOpen, setFindOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [textOpen, setTextOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const phone = usePhone();
   const [moving, setMoving] = useState<string | undefined>();
   const [toast, setToast] = useState<Toast | null>(null);
   /** In-page confirmation (browser confirm() is unavailable in some viewers and jarring on phones). */
@@ -204,6 +249,10 @@ export function App() {
     setTag('');
     setIntent(undefined);
     setViewId(undefined);
+    setRenaming(undefined);
+    setFindOpen(false);
+    setTextOpen(false);
+    setFolded(readFolded(next.id));
     // Phones start on one outlet (readable); desktops start on the whole display.
     const clusters = clusterList(next.result.display);
     setView(isPhone() && clusters.length ? clusters[0].id : OVERALL);
@@ -366,12 +415,11 @@ export function App() {
       setView(owner);
       setFitNonce((n) => n + 1);
     }
-    setCenterRequest((n) => (n ?? 0) + 1);
-    setOutlineScroll((n) => n + 1);
+    requestCenter(true);
   };
 
   const addPreset = (preset: Preset, target: Target) => {
-    noteUsed(preset.id);
+    if (!preset.id.startsWith('like:')) noteUsed(preset.id);
     act(
       // In a copy of last year's display, anything added is new this year.
       (d) => addNode(d, { ...preset, isNew: d.copiedFrom ? true : undefined }, target),
@@ -420,10 +468,48 @@ export function App() {
           doRedo();
         }
       }
-      if (e.key === 'Escape' && !picker && !photoPicker) {
-        if (intent) setIntent(undefined);
+      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || (phone && detailsOpen));
+      if (e.key === 'Escape' && !picker && !photoPicker && !sheetOpen) {
+        if (findOpen) setFindOpen(false);
+        else if (intent) setIntent(undefined);
         else if (moving) setMoving(undefined);
         else if (selected && !inOtherField) setSelected(undefined);
+        return;
+      }
+      // Mind-map keys on the diagram (desktop keyboards).
+      const typing = inOtherField || el?.tagName === 'TEXTAREA' || !!el?.isContentEditable;
+      if (typing || sheetOpen || findOpen || renaming || mode === 'checklist' || e.altKey) return;
+      if (e.key === '/' && mode === 'plan') {
+        e.preventDefault();
+        setFindOpen(true);
+        return;
+      }
+      if (!selected || !display?.nodes[selected] || moving || intent) return;
+      const onButton = el?.tagName === 'BUTTON' || el?.tagName === 'SUMMARY';
+      const mod = e.ctrlKey || e.metaKey;
+      const arrows: Record<string, Direction> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+      if (arrows[e.key] && !mod) {
+        e.preventDefault();
+        const to = navigate(display, selected, arrows[e.key], folded);
+        if (to) jumpTo(to);
+      } else if (e.key === 'Tab' && !mod && !e.shiftKey) {
+        e.preventDefault();
+        openPicker({ parent: selected });
+      } else if (e.key === 'Enter' && !mod && !onButton) {
+        e.preventDefault();
+        addBeside(selected);
+      } else if (mod && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        duplicateSelected(selected);
+      } else if (e.key === 'F2' && mode === 'plan') {
+        e.preventDefault();
+        setRenaming(selected);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !mod) {
+        e.preventDefault();
+        deleteSelected(selected);
+      } else if (e.key === ' ' && !onButton && mode === 'plan') {
+        e.preventDefault();
+        if (childrenCount(selected) > 0 || folded.has(selected)) toggleFold(selected);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -445,9 +531,71 @@ export function App() {
   const photoView = views.find((v) => v.id === viewId) ?? views[0];
   const clusters = useMemo(() => (display ? clusterList(display) : []), [display]);
   const activeView = view !== OVERALL && !clusters.some((c) => c.id === view) ? OVERALL : view;
-  const layout = useMemo(() => (display ? layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView }) : null), [display, activeView]);
+  const layout = useMemo(
+    () => (display ? layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView, collapsed: folded }) : null),
+    [display, activeView, folded],
+  );
   const subtreeOf = useCallback((id: string) => (display ? subtreeIds(display, id) : new Set<string>()), [display]);
-  const openPicker = useCallback((t: Target) => setPicker(t), []);
+  const openPicker = useCallback((t: Target, like?: string) => {
+    setPicker(t);
+    setPickerLike(like);
+  }, []);
+
+  const updateFolded = (fn: (s: Set<string>) => void) => {
+    if (!doc) return;
+    setFolded((prev) => {
+      const next = new Set(prev);
+      fn(next);
+      writeFolded(doc.id, next);
+      return next;
+    });
+  };
+  const toggleFold = (id: string) => updateFolded((f) => (f.has(id) ? f.delete(id) : f.add(id)));
+
+  /** Select an item and bring it into view: unfold what hides it, switch outlet if needed. */
+  const jumpTo = (id: string) => {
+    if (!display?.nodes[id]) return;
+    const ancestors: string[] = [];
+    const seen = new Set([id]);
+    for (let cur = parentOf(display, id); cur && !seen.has(cur); cur = parentOf(display, cur)) {
+      seen.add(cur);
+      ancestors.push(cur);
+    }
+    if (ancestors.some((a) => folded.has(a))) updateFolded((f) => ancestors.forEach((a) => f.delete(a)));
+    setSelected(id);
+    const owner = clusterOf(display, id);
+    if (view !== OVERALL && owner && owner !== view) {
+      setView(owner);
+      setFitNonce((n) => n + 1);
+    }
+    requestCenter(false);
+  };
+
+  /** "+ Into K01": another item into the same parent, next to the selected one. */
+  const addBeside = (id: string) => {
+    if (!display) return;
+    const home = homeLink(display, id);
+    openPicker({ parent: home?.kind === 'power' ? home.from : null }, id);
+  };
+
+  const duplicateSelected = (id: string) => act((d) => duplicateNode(d, id), (r, next) => reveal(r.nodeId, next));
+
+  const deleteSelected = (id: string) => {
+    if (!display) return;
+    const up = parentOf(display, id);
+    act((d) => deleteNode(d, id, false));
+    setSelected(up);
+    showToast(`Deleted ${id}${childrenCount(id) ? '; what was plugged into it is now unplugged' : ''}`, true);
+  };
+  const childrenCount = (id: string) => (display ? subtreeIds(display, id).size - 1 : 0);
+
+  const commitRename = (id: string, label: string | null) => {
+    setRenaming(undefined);
+    if (label === null || !display?.nodes[id]) return;
+    const clean = label.replace(/[[\]]/g, '').trim();
+    if (clean === display.nodes[id].label) return;
+    act((d) => updateNode(d, id, { label: clean }));
+  };
 
   const showView = (id: string) => {
     setView(id);
@@ -456,19 +604,16 @@ export function App() {
 
   const selectFromDiagram = (nodeId: string | undefined) => {
     setSelected(nodeId);
-    if (nodeId) setOutlineScroll((n) => n + 1);
+    if (!nodeId) setDetailsOpen(false);
+    // The selection bar takes room at the bottom on phones: keep the item in view.
+    else requestCenter(false);
   };
 
   const selectFromOutline = (line: number) => {
     if (!doc) return;
     const nodeId = doc.result.lineFocusIds[line];
     if (!nodeId || nodeId === selected) return;
-    setSelected(nodeId);
-    if (layout && !layout.nodes.some((n) => n.nodeId === nodeId)) {
-      const owner = clusterOf(doc.result.display, nodeId);
-      if (owner) showView(owner);
-    }
-    setCenterRequest((n) => (n ?? 0) + 1);
+    jumpTo(nodeId);
   };
 
   const whileBusy = async (fn: () => Promise<void>) => {
@@ -539,12 +684,8 @@ export function App() {
     if (!doc) return;
     setMode('plan');
     setDialog(null);
-    setSelected(id);
-    const owner = clusterOf(doc.result.display, id);
-    if (view !== OVERALL && owner) setView(owner);
+    jumpTo(id);
     setFitNonce((n) => n + 1);
-    setCenterRequest((n) => (n ?? 0) + 1);
-    setOutlineScroll((n) => n + 1);
   };
 
   const toggleRow = (r: ChecklistRow) => {
@@ -691,8 +832,10 @@ export function App() {
   if (!doc || !layout || !display || !hist) return <div className="loading">Loading…</div>;
 
   const title = display.title;
-  const exportSvg = () => downloadSvg(layoutToSvg(layout, title), title);
-  const exportPng = () => downloadPng(layoutToSvg(layout, title), title).catch((e: Error) => showToast(e.message));
+  // Exports show everything, folded branches included.
+  const fullLayout = () => layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView });
+  const exportSvg = () => downloadSvg(layoutToSvg(fullLayout(), title), title);
+  const exportPng = () => downloadPng(layoutToSvg(fullLayout(), title), title).catch((e: Error) => showToast(e.message));
   const stats = displayStats(display);
   const highlight = selected ? doc.result.lineNodeIds.indexOf(selected) : -1;
   const options = list.some((d) => d.id === doc.id) ? list : [{ id: doc.id, title }, ...list];
@@ -700,6 +843,73 @@ export function App() {
   const allTags = [...new Set(Object.values(display.nodes).flatMap((n) => n.tags))].sort();
   const dimmed = tag ? new Set(Object.values(display.nodes).filter((n) => !n.tags.includes(tag)).map((n) => n.id)) : undefined;
   const groups = mode === 'checklist' ? checklist(display, clMode) : [];
+  const selBarShown = !!selNode && !moving && !intent && mode !== 'checklist';
+  const selParent = selNode ? homeLink(display, selNode.id) : undefined;
+  const selBar = selNode && selBarShown && (
+    <SelectionBar
+      node={selNode}
+      parentId={selParent?.kind === 'power' ? selParent.from : undefined}
+      below={childrenCount(selNode.id)}
+      folded={folded.has(selNode.id)}
+      detailsOpen={detailsOpen}
+      onDetails={phone ? () => setDetailsOpen((o) => !o) : undefined}
+      onPlugIn={() => openPicker({ parent: selNode.id })}
+      onAddBeside={() => addBeside(selNode.id)}
+      onDuplicate={() => duplicateSelected(selNode.id)}
+      onRename={() => {
+        if (mode === 'plan') {
+          jumpTo(selNode.id);
+          setRenaming(selNode.id);
+        } else setDetailsOpen(true);
+      }}
+      onMove={() => {
+        if (mode === 'photo') {
+          setIntent({ type: 'move', nodeId: selNode.id });
+          return;
+        }
+        setMoving(selNode.id);
+        setDetailsOpen(false);
+        showToast(`Now tap where ${selNode.id} should plug in`);
+      }}
+      onFold={() => toggleFold(selNode.id)}
+      onDelete={() => deleteSelected(selNode.id)}
+      onClose={() => {
+        setSelected(undefined);
+        setDetailsOpen(false);
+      }}
+      extra={
+        mode === 'photo' && photoView ? (
+          <PhotoNodeActions
+            placement={selNode.placements?.[photoView.id]}
+            lengthFt={selNode.placements?.[photoView.id] ? runLengthFt(selNode.placements[photoView.id], photoView) : undefined}
+            isLight={selNode.kind === 'load' && LIGHT_RUNS.has(selNode.category ?? '')}
+            onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
+            onDraw={() => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
+            onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
+            onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
+          />
+        ) : undefined
+      }
+    />
+  );
+  const nodePanel = selNode && (
+    <NodePanel
+      key={selNode.id}
+      node={selNode}
+      below={childrenCount(selNode.id)}
+      plugged={!!selParent}
+      onPatch={(patch: NodePatch) => act((d) => updateNode(d, selNode.id, patch))}
+      onKind={(kind: NodeKind) => act((d) => changeKind(d, selNode.id, kind), (r) => setSelected(r.nodeId))}
+      onUnplug={() => act((d) => unplug(d, selNode.id), (r, next) => reveal(r.nodeId, next))}
+      onDeleteBranch={() => {
+        act((d) => deleteNode(d, selNode.id, true));
+        setSelected(undefined);
+        setDetailsOpen(false);
+        showToast(`Deleted ${selNode.id} and everything below it`, true);
+      }}
+      onSaveAsPreset={(name, icon) => void saveAsPreset(selNode.id, name, icon)}
+    />
+  );
 
   return (
     <div className="app">
@@ -732,6 +942,9 @@ export function App() {
           <details className="menu">
             <summary aria-label="More display actions">⋯</summary>
             <div className="menu-list" role="menu">
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setMode((m) => (m === 'checklist' ? 'plan' : m)); setTextOpen(true); }}>
+                Edit as text…
+              </button>
               <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); setDialog('copy'); }}>
                 Copy for next year…
               </button>
@@ -833,7 +1046,7 @@ export function App() {
           />
         </main>
       ) : (
-      <main className="split">
+      <main className={`split${!phone ? ' with-inspector' : ''}${selBarShown ? ' has-selection' : ''}`}>
         <section className={`pane-diagram${mode === 'photo' ? ' photo-mode' : ''}`} aria-label={mode === 'photo' ? 'Photo' : 'Diagram'}>
           {mode === 'photo' ? (
             <PhotoPane
@@ -853,7 +1066,7 @@ export function App() {
               selectedId={selected}
               onSelect={(id) => {
                 setSelected(id);
-                if (id) setOutlineScroll((n) => n + 1);
+                if (!id) setDetailsOpen(false);
               }}
               intent={intent}
               setIntent={setIntent}
@@ -881,90 +1094,119 @@ export function App() {
               fitKey={`${doc.id}:${fitNonce}`}
             />
           ) : (
-          <>
-          {canDrag && <Palette selectedId={selected} custom={custom} onPick={(p) => selected && addPreset(p, { parent: selected })} />}
-          <Diagram
-            layout={layout}
-            selectedId={selected}
-            onSelect={selectFromDiagram}
-            fitKey={`${doc.id}:${activeView}:${fitNonce}`}
-            centerRequest={centerRequest}
-            onAdd={openPicker}
-            onReplug={doReplug}
-            movingId={moving}
-            onCancelMove={() => setMoving(undefined)}
-            subtreeOf={subtreeOf}
-            onDropPreset={(id, target) => {
-              const p = presetById(id, custom);
-              if (p) addPreset(p, target);
-            }}
-            canDrag={canDrag}
-            dimmed={dimmed}
-            undo={{ can: hist.past.length > 0, run: doUndo }}
-            redo={{ can: hist.future.length > 0, run: doRedo }}
-            onExportSvg={exportSvg}
-            onExportPng={exportPng}
-          />
-          </>
-          )}
-          {selNode && !moving && !intent && (
-            <NodePanel
-              key={selNode.id}
-              node={selNode}
-              below={subtreeOf(selNode.id).size - 1}
-              plugged={!!homeLink(display, selNode.id)}
-              onPatch={(patch: NodePatch) => act((d) => updateNode(d, selNode.id, patch))}
-              onKind={(kind: NodeKind) => act((d) => changeKind(d, selNode.id, kind), (r) => setSelected(r.nodeId))}
-              onAddChild={() => setPicker({ parent: selNode.id })}
-              onMove={() => {
-                if (mode === 'photo') {
-                  setIntent({ type: 'move', nodeId: selNode.id });
-                  return;
-                }
-                setMoving(selNode.id);
-                showToast(`Now tap where ${selNode.id} should plug in`);
-              }}
-              onUnplug={() => act((d) => unplug(d, selNode.id), (r, next) => reveal(r.nodeId, next))}
-              onDelete={(withChildren) => {
-                act((d) => deleteNode(d, selNode.id, withChildren));
-                setSelected(undefined);
-                showToast(`Deleted ${selNode.id}${withChildren ? ' and everything below it' : ''}`, true);
-              }}
-              onSaveAsPreset={(name, icon) => void saveAsPreset(selNode.id, name, icon)}
-              onClose={() => setSelected(undefined)}
-              extra={
-                mode === 'photo' && photoView ? (
-                  <PhotoNodeActions
-                    placement={selNode.placements?.[photoView.id]}
-                    lengthFt={selNode.placements?.[photoView.id] ? runLengthFt(selNode.placements[photoView.id], photoView) : undefined}
-                    isLight={selNode.kind === 'load' && LIGHT_RUNS.has(selNode.category ?? '')}
-                    onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
-                    onDraw={() => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
-                    onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
-                    onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
+            <>
+              {canDrag && !phone && <Palette selectedId={selected} custom={custom} onPick={(p) => selected && addPreset(p, { parent: selected })} />}
+              <div className="diagram-wrap">
+                <Diagram
+                  layout={layout}
+                  selectedId={selected}
+                  onSelect={selectFromDiagram}
+                  fitKey={`${doc.id}:${activeView}:${fitNonce}`}
+                  centerRequest={centerRequest}
+                  onAdd={openPicker}
+                  onReplug={doReplug}
+                  movingId={moving}
+                  onCancelMove={() => setMoving(undefined)}
+                  subtreeOf={subtreeOf}
+                  onDropPreset={(id, target) => {
+                    const p = presetById(id, custom);
+                    if (p) addPreset(p, target);
+                  }}
+                  canDrag={canDrag}
+                  dimmed={dimmed}
+                  undo={{ can: hist.past.length > 0, run: doUndo }}
+                  redo={{ can: hist.future.length > 0, run: doRedo }}
+                  onExportSvg={exportSvg}
+                  onExportPng={exportPng}
+                  renamingId={renaming}
+                  onStartRename={(id) => {
+                    setSelected(id);
+                    setRenaming(id);
+                  }}
+                  onRename={commitRename}
+                  onUnfold={(id) => updateFolded((f) => f.delete(id))}
+                  onFoldAll={() =>
+                    updateFolded((f) => {
+                      for (const n of Object.values(display.nodes)) if (n.kind !== 'outlet' && childrenCount(n.id) > 0) f.add(n.id);
+                    })
+                  }
+                  onUnfoldAll={() => updateFolded((f) => f.clear())}
+                  onFind={() => setFindOpen(true)}
+                  onHelp={() => setHelpOpen(true)}
+                  showMinimap={canDrag && !phone}
+                />
+                {findOpen && (
+                  <FindBox
+                    display={display}
+                    whereOf={(id) => {
+                      const c = clusterOf(display, id);
+                      return c === 'unplugged' ? 'not plugged in yet' : c ? `on ${c}` : '';
+                    }}
+                    onPick={(id) => {
+                      setFindOpen(false);
+                      jumpTo(id);
+                    }}
+                    onClose={() => setFindOpen(false)}
                   />
-                ) : undefined
-              }
-            />
+                )}
+              </div>
+            </>
           )}
+          {phone && selBar}
         </section>
-        <section className="pane-outline" aria-label="Outline">
-          <OutlineEditor
-            value={doc.text}
-            readOnly={busy}
-            onChange={editText}
-            diagnostics={doc.result.diagnostics}
-            highlightLine={highlight >= 0 ? highlight : undefined}
-            scrollRequest={outlineScroll}
-            onCursorLine={selectFromOutline}
-            suggestFor={(line) => suggest(line, [...custom, ...PRESETS]).map((p) => ({ id: p.id, icon: p.icon, text: presetText(p) }))}
-          />
-          <p className="note">
-            Two spaces = plugged into the line above. A planning aid, not an electrical inspection.
-          </p>
-        </section>
+        {!phone && (
+          <aside className="inspector" aria-label="Inspector">
+            {selBarShown && selNode ? (
+              <>
+                {selBar}
+                {nodePanel}
+              </>
+            ) : (
+              <div className="inspector-empty">
+                <h2>{title}</h2>
+                <p className="muted small">
+                  {stats.nodes} items · {stats.powerLinks} plugged in · {stats.signalLinks} signal links
+                </p>
+                <ul className="tips">
+                  <li>
+                    <b>Click an item</b> to plug something in, add another next to it, duplicate, rename or move it.
+                  </li>
+                  <li>
+                    <b>Click “+ Unused socket”</b> to fill that exact socket.
+                  </li>
+                  <li>
+                    <b>Keyboard:</b> <kbd>Tab</kbd> plug in, <kbd>Enter</kbd> add beside, <kbd>F2</kbd> rename, <kbd>/</kbd> find,
+                    arrows to move around.
+                  </li>
+                  <li>Drag an item onto a socket to re-plug it, or drag from the palette.</li>
+                </ul>
+                <button type="button" onClick={() => setHelpOpen(true)}>
+                  Shortcuts and colours
+                </button>
+              </div>
+            )}
+          </aside>
+        )}
       </main>
       )}
+      {phone && detailsOpen && selNode && (
+        <Sheet title={`${selNode.id} details`} onClose={() => setDetailsOpen(false)}>
+          {nodePanel}
+        </Sheet>
+      )}
+      {textOpen && (
+        <TextSheet
+          value={doc.text}
+          onChange={editText}
+          readOnly={busy}
+          diagnostics={doc.result.diagnostics}
+          highlightLine={highlight >= 0 ? highlight : undefined}
+          onCursorLine={selectFromOutline}
+          suggestFor={(line) => suggest(line, [...custom, ...PRESETS]).map((p) => ({ id: p.id, icon: p.icon, text: presetText(p) }))}
+          onClose={() => setTextOpen(false)}
+        />
+      )}
+      {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
 
       {dialog === 'restore' && doc && (
         <RestoreDialog load={() => listSnapshots(doc.id)} onSaveNow={saveRestorePoint} onRestore={restore} onClose={() => setDialog(null)} />
@@ -1000,6 +1242,7 @@ export function App() {
           title={targetTitle(picker)}
           custom={custom}
           onDeleteCustom={(p) => void deletePreset(p)}
+          suggested={suggestionsFor(display, picker.parent, pickerLike)}
           onClose={() => setPicker(null)}
           onPick={(p) => {
             const t = picker;
