@@ -4,6 +4,10 @@ export function fileSlug(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'display';
 }
 
+export function downloadText(text: string, filename: string, type: string) {
+  download(new Blob([text], { type }), filename);
+}
+
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

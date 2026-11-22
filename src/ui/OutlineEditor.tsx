@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Diagnostic, Severity } from '../model/types';
+import { splitLine } from '../presets/custom';
+
+export interface Suggestion {
+  id: string;
+  icon: string;
+  /** Text that replaces what was typed on the line. */
+  text: string;
+}
 
 /** Must match --outline-lh in styles.css. */
 const LH = 22;
@@ -14,11 +22,13 @@ interface Props {
   scrollRequest?: number;
   onCursorLine: (line: number) => void;
   readOnly?: boolean;
+  /** Library matches for what is typed on a line (autocomplete). */
+  suggestFor?: (line: string) => Suggestion[];
 }
 
 const RANK: Record<Severity, number> = { info: 0, warning: 1, error: 2 };
 
-export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scrollRequest, onCursorLine, readOnly }: Props) {
+export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scrollRequest, onCursorLine, readOnly, suggestFor }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
   const gutterInner = useRef<HTMLDivElement>(null);
   const backdropInner = useRef<HTMLDivElement>(null);
@@ -36,6 +46,25 @@ export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scr
     return m;
   }, [diagnostics]);
   const problems = diagnostics.filter((d) => d.severity !== 'info');
+  const [focused, setFocused] = useState(false);
+  const suggestions = focused && suggestFor && !readOnly ? suggestFor(lines[cursorLine] ?? '') : [];
+
+  const accept = (sug: Suggestion) => {
+    const t = area.current;
+    if (!t) return;
+    const { head } = splitLine(lines[cursorLine] ?? '');
+    const next = [...lines];
+    next[cursorLine] = head + sug.text;
+    const text = next.join('\n');
+    let caret = 0;
+    for (let i = 0; i < cursorLine; i++) caret += next[i].length + 1;
+    caret += next[cursorLine].length;
+    onChange(text);
+    requestAnimationFrame(() => {
+      t.focus();
+      t.setSelectionRange(caret, caret);
+    });
+  };
   const here = diagnostics.filter((d) => d.line - 1 === cursorLine);
 
   const syncScroll = () => {
@@ -126,6 +155,8 @@ export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scr
               requestAnimationFrame(reportCursor);
             }}
             onScroll={syncScroll}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 150)}
             onSelect={reportCursor}
             onKeyUp={reportCursor}
             onClick={reportCursor}
@@ -150,6 +181,21 @@ export function OutlineEditor({ value, onChange, diagnostics, highlightLine, scr
           />
         </div>
       </div>
+      {suggestions.length > 0 && (
+        <div className="suggest" aria-label="Suggestions from your presets">
+          {suggestions.map((sug) => (
+            <button
+              key={sug.id}
+              type="button"
+              // Keep focus in the outline so the keyboard stays up on phones.
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => accept(sug)}
+            >
+              <span aria-hidden="true">{sug.icon}</span> {sug.text}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="diag-strip" role="status">
         {here.length > 0 ? (
           here.map((d, i) => (

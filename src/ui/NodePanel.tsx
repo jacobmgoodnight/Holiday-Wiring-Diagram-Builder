@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { toneOf } from '../diagram/layout';
+import { iconFor } from '../presets/custom';
 import type { NodePatch } from '../model/actions';
 import type { DisplayNode, NodeKind, Status } from '../model/types';
 import { NODE_KINDS, STATUSES } from '../model/types';
@@ -24,6 +26,7 @@ interface Props {
   onMove: () => void;
   onUnplug: () => void;
   onDelete: (withChildren: boolean) => void;
+  onSaveAsPreset: (name: string, icon: string) => void;
   onClose: () => void;
 }
 
@@ -68,7 +71,10 @@ const numOrUndef = (v: string): number | undefined | null => {
   return Number.isFinite(n) && n >= 0 ? n : null; // null = invalid, ignore
 };
 
-export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, onMove, onUnplug, onDelete, onClose }: Props) {
+export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, onMove, onUnplug, onDelete, onSaveAsPreset, onClose }: Props) {
+  const [saving, setSaving] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [presetIcon, setPresetIcon] = useState('');
   const num = (key: 'qty' | 'watts' | 'amps' | 'lengthFt' | 'outputs') => (v: string) => {
     const n = numOrUndef(v);
     if (n !== null) onPatch({ [key]: key === 'qty' || key === 'outputs' ? (n === undefined ? undefined : Math.round(n)) : n });
@@ -148,6 +154,37 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
         </div>
       </details>
 
+      {saving && (
+        <form
+          className="save-preset"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSaveAsPreset(presetName || node.label, presetIcon || iconFor(node));
+            setSaving(false);
+          }}
+        >
+          <label className="field wide">
+            <span>Preset name</span>
+            <input autoFocus value={presetName} placeholder={node.label} onChange={(e) => setPresetName(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Icon</span>
+            <input value={presetIcon} placeholder={iconFor(node)} maxLength={4} onChange={(e) => setPresetIcon(e.target.value)} />
+          </label>
+          <p className="muted small">
+            Saves the kind, name{node.lengthFt !== undefined ? ', length' : ''}
+            {node.outputs !== undefined ? ', socket count' : ''} and colour as a preset on this device. Not its
+            connections or status.
+          </p>
+          <button type="submit" className="primary">
+            Save preset
+          </button>{' '}
+          <button type="button" onClick={() => setSaving(false)}>
+            Cancel
+          </button>
+        </form>
+      )}
+
       <div className="panel-actions">
         <button type="button" className="primary" onClick={onAddChild}>
           + Plug something in
@@ -163,6 +200,11 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onAddChild, o
         <button type="button" className="danger" onClick={() => onDelete(false)}>
           Delete
         </button>
+        {!saving && (
+          <button type="button" onClick={() => setSaving(true)}>
+            Save as preset
+          </button>
+        )}
         {below > 0 && (
           <button type="button" className="danger" onClick={() => onDelete(true)}>
             Delete with {below} below

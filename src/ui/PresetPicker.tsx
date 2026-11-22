@@ -5,16 +5,19 @@ import { getFavorites, getRecent, toggleFavorite } from '../presets/prefs';
 interface Props {
   /** e.g. "Plug into S01 · socket 4" */
   title: string;
+  /** Your own presets ("Save as preset"). */
+  custom: Preset[];
+  onDeleteCustom: (p: Preset) => void;
   onPick: (preset: Preset) => void;
   onClose: () => void;
 }
 
 const finePointer = () => window.matchMedia('(pointer: fine)').matches;
 
-export function PresetPicker({ title, onPick, onClose }: Props) {
+export function PresetPicker({ title, custom, onDeleteCustom, onPick, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [favs, setFavs] = useState(getFavorites);
-  const recent = useMemo(() => getRecent().map(presetById).filter((p): p is Preset => !!p), []);
+  const recent = useMemo(() => getRecent().map((id) => presetById(id, custom)).filter((p): p is Preset => !!p), [custom]);
   const sheet = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
 
@@ -27,8 +30,8 @@ export function PresetPicker({ title, onPick, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const results = searchPresets(query);
-  const favorites = favs.map(presetById).filter((p): p is Preset => !!p);
+  const results = searchPresets(query, [...custom, ...PRESETS]);
+  const favorites = favs.map((id) => presetById(id, custom)).filter((p): p is Preset => !!p);
 
   const tile = (p: Preset, key: string) => (
     <div className="tile" key={key}>
@@ -38,6 +41,11 @@ export function PresetPicker({ title, onPick, onClose }: Props) {
         </span>
         <span className="tile-name">{p.name}</span>
       </button>
+      {p.custom && key.startsWith('m-') && (
+        <button type="button" className="tile-del" aria-label={`Remove my preset ${p.name}`} onClick={() => onDeleteCustom(p)}>
+          ✕
+        </button>
+      )}
       <button
         type="button"
         className={`tile-star${favs.includes(p.id) ? ' on' : ''}`}
@@ -98,6 +106,12 @@ export function PresetPicker({ title, onPick, onClose }: Props) {
             </section>
           ) : (
             <>
+              {custom.length > 0 && (
+                <section>
+                  <h3>My presets</h3>
+                  <div className="tiles">{custom.map((p) => tile(p, `m-${p.id}`))}</div>
+                </section>
+              )}
               <section>
                 <h3>Power</h3>
                 <div className="tiles">{PRESETS.filter((p) => p.group === 'power').map((p) => tile(p, p.id))}</div>

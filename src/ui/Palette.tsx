@@ -4,13 +4,14 @@ import { getFavorites, getRecent } from '../presets/prefs';
 
 interface Props {
   selectedId?: string;
+  custom: Preset[];
   onPick: (preset: Preset) => void;
 }
 
 /** Desktop palette: drag a preset onto a socket or item, or click to plug it into the selected item. */
-export function Palette({ selectedId, onPick }: Props) {
-  const first = [...new Set([...getFavorites(), ...getRecent()])].map(presetById).filter((p): p is Preset => !!p);
-  const list = [...first, ...PRESETS.filter((p) => !first.includes(p))];
+export function Palette({ selectedId, custom, onPick }: Props) {
+  const first = [...new Set([...getFavorites(), ...getRecent()])].map((id) => presetById(id, custom)).filter((p): p is Preset => !!p);
+  const list = [...first, ...[...custom, ...PRESETS].filter((p) => !first.includes(p))];
   return (
     <div className="palette" aria-label="Palette">
       <span className="palette-hint">{selectedId ? `Click to plug into ${selectedId}, or drag onto a socket` : 'Drag onto a socket'}</span>

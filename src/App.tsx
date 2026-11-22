@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Diagram } from './diagram/Diagram';
-import { downloadPng, downloadSvg } from './diagram/exportImage';
+import { downloadPng, downloadSvg, downloadText, fileSlug } from './diagram/exportImage';
+import { BackupError, makeBackup, parseBackup, planImport } from './export/backup';
+import { displayToCsv } from './export/csv';
 import { clusterList, clusterOf, layoutDisplay } from './diagram/layout';
 import { layoutToSvg } from './diagram/svg';
 import {
@@ -24,14 +26,19 @@ import { type History, initHistory, push, redo, undo } from './model/history';
 import type { Display, NodeKind } from './model/types';
 import { type BuildResult, buildDisplay } from './outline';
 import { syncFromModel } from './outline/sync';
-import { type Preset, presetById } from './presets/presets';
+import { presetFromNode, presetText, suggest } from './presets/custom';
+import { PRESETS, type Preset, presetById } from './presets/presets';
 import { noteUsed } from './presets/prefs';
 import { SAMPLE_OUTLINE } from './sample';
 import {
   type Snapshot,
   type StoredDisplay,
   addSnapshot,
+  allDisplays,
+  deleteCustomPreset,
   deleteDisplay,
+  listCustomPresets,
+  saveCustomPreset,
   listSnapshots,
   getDisplay,
   getMeta,
@@ -44,6 +51,7 @@ import {
 } from './store/db';
 import { Checklist } from './ui/Checklist';
 import { ChangesDialog, CopyDialog, RestoreDialog } from './ui/Dialogs';
+import { LabelSheet } from './ui/LabelSheet';
 import { NodePanel } from './ui/NodePanel';
 import { OutlineEditor } from './ui/OutlineEditor';
 import { Palette } from './ui/Palette';
@@ -152,6 +160,12 @@ export function App() {
   const [dialog, setDialog] = useState<null | 'restore' | 'copy' | 'changes'>(null);
   const [changes, setChanges] = useState<{ source: string | null; list: Change[] | null } | null>(null);
   const lastAuto = useRef(new Map<string, number>());
+  const [custom, setCustom] = useState<Preset[]>([]);
+  const [labelsOpen, setLabelsOpen] = useState(false);
+  const importInput = useRef<HTMLInputElement>(null);
+  const refreshCustom = useCallback(async () => {
+    if (persist.current) setCustom(await listCustomPresets());
+  }, []);
   const persist = useRef(true);
   const canDrag = useMemo(finePointer, []);
 
@@ -211,12 +225,13 @@ export function App() {
         open(first);
       }
       await refreshList();
+      await refreshCustom();
     })().catch(() => {
       persist.current = false;
       setSave('unavailable');
       open(docFromText(newId(), SAMPLE_OUTLINE));
     });
-  }, [open, refreshList]);
+  }, [open, refreshList, refreshCustom]);
 
   // Autosave shortly after edits stop; flush when the page is hidden or another display opens.
   const pending = useRef<Doc | null>(null);
@@ -506,6 +521,49 @@ export function App() {
     if (det) det.open = false;
   };
 
+  const saveAsPreset = async (nodeId: string, name: string, icon: string) => {
+    if (!display) return;
+    const p = presetFromNode(display.nodes[nodeId], name, icon, `custom-${Date.now().toString(36)}`);
+    await saveCustomPreset(p);
+    await refreshCustom();
+    showToast(`Saved "${p.name}" to My presets`);
+  };
+
+  const deletePreset = async (p: Preset) => {
+    if (!window.confirm(`Remove "${p.name}" from My presets? Items already in your displays are not changed.`)) return;
+    await deleteCustomPreset(p.id);
+    await refreshCustom();
+  };
+
+  const exportCsv = () => {
+    if (!display) return;
+    downloadText(displayToCsv(display), `${fileSlug(display.title)}.csv`, 'text/csv');
+  };
+
+  const exportBackup = async () => {
+    await flush();
+    const backup = makeBackup(await allDisplays());
+    const day = new Date().toISOString().slice(0, 10);
+    downloadText(JSON.stringify(backup, null, 1), `wiring-sketchpad-backup-${day}.json`, 'application/json');
+    showToast(`Backup of ${backup.displays.length} display${backup.displays.length === 1 ? '' : 's'} downloaded. Keep it somewhere safe.`);
+  };
+
+  const importBackup = async (file: File) => {
+    try {
+      const backup = parseBackup(await file.text());
+      await flush();
+      const existing = new Set((await listDisplays()).map((d) => d.id));
+      const planned = planImport(existing, backup.displays, newId);
+      for (const rec of planned) await saveDisplay(rec);
+      await refreshList();
+      if (planned.length) await switchTo(planned[0].id);
+      const copies = planned.filter((r) => r.title.endsWith('(imported)')).length;
+      showToast(`Imported ${planned.length} display${planned.length === 1 ? '' : 's'}${copies ? `; ${copies} already here came in as copies` : ''}.`);
+    } catch (e) {
+      showToast(e instanceof BackupError ? e.message : 'Could not read that file.');
+    }
+  };
+
   const removeCurrent = async () => {
     if (!doc || !persist.current) return;
     if (!window.confirm(`Delete "${doc.result.display.title}" and its restore points from this browser? This cannot be undone.`)) return;
@@ -574,11 +632,35 @@ export function App() {
                   Changes since last year…
                 </button>
               )}
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabelsOpen(true); }}>
+                Cord and plug labels…
+              </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
+                Download items as CSV
+              </button>
+              <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); void exportBackup(); }}>
+                Back up all displays (JSON)
+              </button>
+              <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); importInput.current?.click(); }}>
+                Import a backup…
+              </button>
               <button type="button" role="menuitem" className="danger" disabled={!persist.current} onClick={(e) => { closeMenu(e); void removeCurrent(); }}>
                 Delete this display
               </button>
             </div>
           </details>
+          <input
+            ref={importInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            aria-label="Backup file"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) void importBackup(f);
+            }}
+          />
           <ThemeButton />
         </div>
       </header>
@@ -639,7 +721,7 @@ export function App() {
       ) : (
       <main className="split">
         <section className="pane-diagram" aria-label="Diagram">
-          {canDrag && <Palette selectedId={selected} onPick={(p) => selected && addPreset(p, { parent: selected })} />}
+          {canDrag && <Palette selectedId={selected} custom={custom} onPick={(p) => selected && addPreset(p, { parent: selected })} />}
           <Diagram
             layout={layout}
             selectedId={selected}
@@ -652,7 +734,7 @@ export function App() {
             onCancelMove={() => setMoving(undefined)}
             subtreeOf={subtreeOf}
             onDropPreset={(id, target) => {
-              const p = presetById(id);
+              const p = presetById(id, custom);
               if (p) addPreset(p, target);
             }}
             canDrag={canDrag}
@@ -681,6 +763,7 @@ export function App() {
                 setSelected(undefined);
                 showToast(`Deleted ${selNode.id}${withChildren ? ' and everything below it' : ''}`, true);
               }}
+              onSaveAsPreset={(name, icon) => void saveAsPreset(selNode.id, name, icon)}
               onClose={() => setSelected(undefined)}
             />
           )}
@@ -694,6 +777,7 @@ export function App() {
             highlightLine={highlight >= 0 ? highlight : undefined}
             scrollRequest={outlineScroll}
             onCursorLine={selectFromOutline}
+            suggestFor={(line) => suggest(line, [...custom, ...PRESETS]).map((p) => ({ id: p.id, icon: p.icon, text: presetText(p) }))}
           />
           <p className="note">
             Two spaces = plugged into the line above. A planning aid, not an electrical inspection.
@@ -711,9 +795,18 @@ export function App() {
       {dialog === 'changes' && changes && (
         <ChangesDialog source={changes.source} changes={changes.list} onShow={showOnDiagram} onClose={() => setDialog(null)} />
       )}
+      {labelsOpen && (
+        <LabelSheet
+          display={display}
+          onDownloadCsv={(csv) => downloadText(csv, `${fileSlug(title)}-labels.csv`, 'text/csv')}
+          onClose={() => setLabelsOpen(false)}
+        />
+      )}
       {picker && (
         <PresetPicker
           title={targetTitle(picker)}
+          custom={custom}
+          onDeleteCustom={(p) => void deletePreset(p)}
           onClose={() => setPicker(null)}
           onPick={(p) => {
             const t = picker;
