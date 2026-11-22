@@ -15,7 +15,12 @@ export interface Preset {
   /** Default label written into the outline. */
   label: string;
   outputs?: number;
+  /** Cord length to fill in (custom presets saved from a cord). */
+  lengthFt?: number;
+  color?: string;
   keywords?: string;
+  /** Saved by you with "Save as preset" (stored in this browser). */
+  custom?: boolean;
 }
 
 export const PRESETS: Preset[] = [
@@ -52,7 +57,8 @@ export const PRESETS: Preset[] = [
   { id: 'other', name: 'Other', icon: '⭐', group: 'load', kind: 'load', category: 'other', label: 'Item', keywords: 'misc' },
 ];
 
-export const presetById = (id: string) => PRESETS.find((p) => p.id === id);
+/** Look up a preset among your own (first) and the built-in ones. */
+export const presetById = (id: string, custom: Preset[] = []) => custom.find((p) => p.id === id) ?? PRESETS.find((p) => p.id === id);
 
 /** Case-insensitive search over name, label and keywords; every word must match. */
 export function searchPresets(query: string, list: Preset[] = PRESETS): Preset[] {

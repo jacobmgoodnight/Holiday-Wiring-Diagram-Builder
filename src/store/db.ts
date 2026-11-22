@@ -5,6 +5,7 @@
 import Dexie, { type Table } from 'dexie';
 import { snapshotsToPrune } from '../model/season';
 import type { Display } from '../model/types';
+import type { Preset } from '../presets/presets';
 
 export interface StoredDisplay {
   id: string;
@@ -43,11 +44,14 @@ class SketchpadDb extends Dexie {
   displays!: Table<StoredDisplay, string>;
   meta!: Table<Meta, string>;
   snapshots!: Table<Snapshot, number>;
+  presets!: Table<Preset & { createdAt: number }, string>;
   constructor() {
     super('wiring-sketchpad');
     this.version(1).stores({ displays: 'id, updatedAt', meta: 'key' });
     // v2 adds restore points; existing displays are untouched.
     this.version(2).stores({ displays: 'id, updatedAt', meta: 'key', snapshots: '++id, displayId, at' });
+    // v3 adds your own presets ("Save as preset").
+    this.version(3).stores({ displays: 'id, updatedAt', meta: 'key', snapshots: '++id, displayId, at', presets: 'id, createdAt' });
   }
 }
 
@@ -116,6 +120,24 @@ export function addSnapshot(snap: Omit<Snapshot, 'id'>): Promise<void> {
 export async function listSnapshots(displayId: string): Promise<Snapshot[]> {
   const all = await getDb().snapshots.where('displayId').equals(displayId).toArray();
   return all.sort((a, b) => b.at - a.at);
+}
+
+export async function listCustomPresets(): Promise<Preset[]> {
+  const all = await getDb().presets.orderBy('createdAt').toArray();
+  return all.map(({ createdAt: _c, ...p }) => ({ ...p, custom: true }));
+}
+
+export async function saveCustomPreset(p: Preset): Promise<void> {
+  await getDb().presets.put({ ...p, custom: true, createdAt: Date.now() });
+}
+
+export async function deleteCustomPreset(id: string): Promise<void> {
+  await getDb().presets.delete(id);
+}
+
+/** Every saved display, for a full backup. */
+export async function allDisplays(): Promise<StoredDisplay[]> {
+  return getDb().displays.orderBy('updatedAt').reverse().toArray();
 }
 
 export function deleteDisplay(id: string): Promise<void> {

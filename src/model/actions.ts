@@ -28,6 +28,8 @@ export interface NewItem {
   subtype?: string;
   category?: LoadCategory;
   outputs?: number;
+  lengthFt?: number;
+  color?: string;
   watts?: number;
   wattsApprox?: boolean;
   isNew?: boolean;
@@ -162,6 +164,8 @@ export function addNode(display: Display, item: NewItem, target: Target): Action
     watts: item.watts,
     wattsApprox: item.watts !== undefined ? (item.wattsApprox ?? true) : undefined,
     isNew: item.isNew,
+    lengthFt: item.lengthFt,
+    color: item.color,
   });
   const warning = attach(d, id, target);
   return { display: d, nodeId: id, warning };
