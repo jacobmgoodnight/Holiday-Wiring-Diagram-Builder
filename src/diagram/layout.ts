@@ -3,6 +3,7 @@
  * top to bottom. Shared by the on-screen diagram and SVG/PNG export.
  * Layout never changes the model or its connections.
  */
+import { subtreeIds } from '../model/actions';
 import { powerChildren, socketLabels, unusedSockets } from '../model/graph';
 import type { Display, DisplayNode, SignalType } from '../model/types';
 
@@ -27,6 +28,12 @@ export interface LayoutNode {
   /** Wrapped text; the first line starts with the ID for items. */
   lines: string[];
   meta?: string;
+  /** Items: the name as entered (for renaming on the canvas). */
+  label?: string;
+  /** Items: something is plugged into it (power or a signal-only item), so it can collapse. */
+  branch?: boolean;
+  /** Items: collapsed, hiding this many items below it. */
+  collapsed?: number;
 }
 
 export interface LayoutEdge {
@@ -61,6 +68,8 @@ export interface Layout {
 export interface LayoutOptions {
   /** Show only the cluster with this root id. */
   focus?: string | null;
+  /** Items whose branches are folded away (mind-map style). */
+  collapsed?: ReadonlySet<string>;
 }
 
 export const NODE_W = 210;
@@ -184,6 +193,17 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
   if (unplugged.length) merged.push({ id: 'unplugged', title: 'Not plugged in yet', members: unplugged });
 
   const visible = options.focus ? merged.filter((c) => c.id === options.focus || c.members.includes(options.focus!)) : merged;
+  // Everything below a collapsed item is left out of the layout.
+  const hidden = new Set<string>();
+  const folded = new Map<string, number>();
+  for (const id of options.collapsed ?? []) {
+    if (!display.nodes[id]) continue;
+    const below = subtreeIds(display, id);
+    below.delete(id);
+    if (!below.size) continue;
+    folded.set(id, below.size);
+    below.forEach((x) => hidden.add(x));
+  }
   const nodes: LayoutNode[] = [];
   const edges: LayoutEdge[] = [];
   const clusters: Cluster[] = [];
@@ -191,7 +211,8 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
   let cursorY = 0;
   let width = 0;
 
-  for (const cluster of visible) {
+  for (const full of visible) {
+    const cluster = { ...full, members: full.members.filter((m) => !hidden.has(m)) };
     const memberSet = new Set(cluster.members);
     const boxes = new Map<string, LayoutNode>();
     /** Ordered children (items and unused-socket ghosts) for each member, in outline order. */
@@ -200,9 +221,15 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
 
     for (const id of cluster.members) {
       const node = display.nodes[id];
-      boxes.set(id, { id, type: 'item', nodeId: id, cluster: cluster.id, x: 0, y: 0, tone: toneOf(node), ...itemBox(node) });
+      boxes.set(id, { id, type: 'item', nodeId: id, label: node.label, cluster: cluster.id, x: 0, y: 0, tone: toneOf(node), ...itemBox(node) });
     }
     for (const id of cluster.members) {
+      const box = boxes.get(id)!;
+      box.branch = display.links.some((l) => l.from === id && l.to && (l.kind === 'power' || l.owns));
+      if (folded.has(id)) {
+        box.collapsed = folded.get(id);
+        continue; // no children, no unused sockets drawn under a folded branch
+      }
       const labels = socketLabels(display, id);
       const usedLabels = new Set([...labels.values()].filter(Boolean) as string[]);
       let ghostN = 0;

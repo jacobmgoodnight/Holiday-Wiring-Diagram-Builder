@@ -103,11 +103,17 @@ function attach(d: Display, childId: string, target: Target): string | undefined
   let warning: string | undefined;
   if (target.port === undefined) {
     // No socket named: a written "Unused socket" line is the next free socket.
-    const placeholder = powerChildren(d, parent).find((l) => l.to === null);
+    const kids = powerChildren(d, parent);
+    const placeholder = kids.find((l) => l.to === null);
     if (placeholder) {
       placeholder.to = childId;
       delete placeholder.src;
       return undefined;
+    }
+    const outputs = d.nodes[parent].outputs;
+    const used = kids.filter((l) => l.to).length;
+    if (outputs !== undefined && used >= outputs) {
+      warning = `${parent} has no free socket (${used} of ${outputs} used); this makes socket ${used + 1}. Check it, or change its socket count.`;
     }
   } else {
     const labels = socketLabels(d, parent);
@@ -162,7 +168,7 @@ export function addNode(display: Display, item: NewItem, target: Target): Action
     category: item.kind === 'load' ? (item.category ?? 'other') : undefined,
     outputs: item.outputs,
     watts: item.watts,
-    wattsApprox: item.watts !== undefined ? (item.wattsApprox ?? true) : undefined,
+    wattsApprox: item.watts !== undefined && (item.wattsApprox ?? true) ? true : undefined,
     isNew: item.isNew,
     lengthFt: item.lengthFt,
     color: item.color,
@@ -261,4 +267,40 @@ export function changeKind(display: Display, id: string, kind: NodeKind): Action
   }
   for (const c of d.comments) if (c.parent === id) c.parent = newId;
   return { display: d, nodeId: newId };
+}
+
+/**
+ * Another one of the same item (a new physical item with a new ID): same kind, name,
+ * details and tags, plugged into the same parent's next free socket. Status, notes, photo
+ * spots and anything plugged into the original are not copied.
+ */
+export function duplicateNode(display: Display, id: string): ActionResult {
+  const n = display.nodes[id];
+  if (!n) throw new ActionError(`No item ${id}`);
+  const home = homeLink(display, id);
+  const target: Target = home?.kind === 'power' ? { parent: home.from } : { parent: null };
+  const added = addNode(
+    display,
+    {
+      kind: n.kind,
+      label: n.label,
+      subtype: n.subtype,
+      category: n.category,
+      outputs: n.outputs,
+      lengthFt: n.lengthFt,
+      color: n.color,
+      watts: n.watts,
+      // Copy exactly: an entered number stays entered (addNode would mark it an estimate).
+      wattsApprox: n.watts !== undefined ? !!n.wattsApprox : undefined,
+      isNew: n.isNew,
+    },
+    target,
+  );
+  const copy = added.display.nodes[added.nodeId!];
+  if (n.qty !== undefined) copy.qty = n.qty;
+  if (n.lengthApprox) copy.lengthApprox = true;
+  if (n.breakerAmps !== undefined) copy.breakerAmps = n.breakerAmps;
+  if (n.gfci) copy.gfci = true;
+  copy.tags = [...n.tags];
+  return added;
 }
