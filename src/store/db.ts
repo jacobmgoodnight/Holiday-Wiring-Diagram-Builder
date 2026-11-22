@@ -35,6 +35,15 @@ export interface Snapshot {
   lineNodeIds: (string | null)[];
 }
 
+/** A photo for the overlay, already shrunk. Stored once and shared by copies of a display. */
+export interface StoredPhoto {
+  id: string;
+  blob: Blob;
+  width: number;
+  height: number;
+  createdAt: number;
+}
+
 export interface Meta {
   key: string;
   value: unknown;
@@ -45,6 +54,7 @@ class SketchpadDb extends Dexie {
   meta!: Table<Meta, string>;
   snapshots!: Table<Snapshot, number>;
   presets!: Table<Preset & { createdAt: number }, string>;
+  photos!: Table<StoredPhoto, string>;
   constructor() {
     super('wiring-sketchpad');
     this.version(1).stores({ displays: 'id, updatedAt', meta: 'key' });
@@ -52,6 +62,8 @@ class SketchpadDb extends Dexie {
     this.version(2).stores({ displays: 'id, updatedAt', meta: 'key', snapshots: '++id, displayId, at' });
     // v3 adds your own presets ("Save as preset").
     this.version(3).stores({ displays: 'id, updatedAt', meta: 'key', snapshots: '++id, displayId, at', presets: 'id, createdAt' });
+    // v4 adds photos for the overlay.
+    this.version(4).stores({ displays: 'id, updatedAt', meta: 'key', snapshots: '++id, displayId, at', presets: 'id, createdAt', photos: 'id, createdAt' });
   }
 }
 
@@ -140,10 +152,34 @@ export async function allDisplays(): Promise<StoredDisplay[]> {
   return getDb().displays.orderBy('updatedAt').reverse().toArray();
 }
 
+export async function savePhoto(p: StoredPhoto): Promise<void> {
+  await getDb().photos.put(p);
+}
+
+export function getPhoto(id: string): Promise<StoredPhoto | undefined> {
+  return getDb().photos.get(id);
+}
+
+export async function allPhotos(): Promise<StoredPhoto[]> {
+  return getDb().photos.toArray();
+}
+
+/** Delete photos that no display and no restore point refers to any more. */
+async function prunePhotos(): Promise<void> {
+  const db = getDb();
+  const used = new Set<string>();
+  const collect = (d?: Display) => d?.views?.forEach((v) => used.add(v.photoId));
+  (await db.displays.toArray()).forEach((r) => collect(r.display));
+  (await db.snapshots.toArray()).forEach((r) => collect(r.display));
+  const unused = (await db.photos.toCollection().primaryKeys()).filter((k) => !used.has(k));
+  if (unused.length) await db.photos.bulkDelete(unused);
+}
+
 export function deleteDisplay(id: string): Promise<void> {
   const run = queue.then(async () => {
     await getDb().displays.delete(id);
     await getDb().snapshots.where('displayId').equals(id).delete();
+    await prunePhotos();
   });
   queue = run.catch(() => undefined);
   return run;

@@ -119,6 +119,8 @@ export interface DisplayNode {
   scheduleGroup?: string;
   /** Teardown: packed away this season (model-only). */
   packed?: boolean;
+  /** Where this item sits on each photo view (model-only; survives text edits). */
+  placements?: Record<string, Placement>;
   /** Raw outline line content (after indentation) that created this node. */
   src?: string;
   /** For top-level nodes: position among top-level entries. */
@@ -176,7 +178,29 @@ export interface Display {
   trailingBlank?: number;
   /** Display this one was copied from ("Copy for next year"), for the changes view. */
   copiedFrom?: string;
+  /** Photos of the house that items are placed on. */
+  views?: PhotoView[];
 }
+
+/**
+ * A photo of the house. Coordinates of placements are fractions (0..1) of the photo's width
+ * and height, so they survive any resize of the stored image.
+ */
+export interface PhotoView {
+  id: string;
+  name: string;
+  /** Key of the image in local storage (photos table). */
+  photoId: string;
+  width: number;
+  height: number;
+  /** Real-world feet per photo pixel, from "Measure" (undefined until set). */
+  feetPerPx?: number;
+}
+
+export type Placement =
+  | { kind: 'point'; x: number; y: number }
+  /** A light run drawn along the house: at least two points. */
+  | { kind: 'path'; points: [number, number][] };
 
 export type Severity = 'error' | 'warning' | 'info';
 

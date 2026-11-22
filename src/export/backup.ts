@@ -6,19 +6,30 @@ import type { Display } from '../model/types';
 import type { StoredDisplay } from '../store/db';
 
 export const BACKUP_FORMAT = 'wiring-sketchpad-backup';
-export const BACKUP_VERSION = 1;
+/** v2 adds photos for the overlay. v1 files still import. */
+export const BACKUP_VERSION = 2;
+
+/** A photo inside a backup file (base64, so the file stays plain JSON). */
+export interface BackupPhoto {
+  id: string;
+  type: string;
+  width: number;
+  height: number;
+  base64: string;
+}
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
   version: number;
   exportedAt: string;
   displays: StoredDisplay[];
+  photos?: BackupPhoto[];
 }
 
 export class BackupError extends Error {}
 
-export function makeBackup(displays: StoredDisplay[], now = new Date()): Backup {
-  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), displays };
+export function makeBackup(displays: StoredDisplay[], now = new Date(), photos: BackupPhoto[] = []): Backup {
+  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), displays, photos };
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -53,6 +64,14 @@ export function parseBackup(text: string): Backup {
   }
   if (!Array.isArray(data.displays)) throw new BackupError('The backup has no displays.');
   data.displays.forEach(checkDisplay);
+  if (data.photos !== undefined) {
+    if (!Array.isArray(data.photos)) throw new BackupError('The photos in this backup are damaged.');
+    data.photos.forEach((p, i) => {
+      if (!isObj(p) || typeof p.id !== 'string' || typeof p.base64 !== 'string' || typeof p.type !== 'string' || !/^image\//.test(p.type)) {
+        throw new BackupError(`Photo ${i + 1} in this backup is damaged.`);
+      }
+    });
+  }
   return data as unknown as Backup;
 }
 

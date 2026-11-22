@@ -81,6 +81,16 @@ describe('JSON backup', () => {
     expect(() => parseBackup(JSON.stringify(broken))).toThrow(/item C02 is damaged/);
   });
 
+  it('carries photos, and rejects damaged ones', () => {
+    const photo = { id: 'p1', type: 'image/jpeg', width: 10, height: 5, base64: 'AAAA' };
+    const back = parseBackup(JSON.stringify(makeBackup([rec()], new Date(), [photo])));
+    expect(back.photos).toEqual([photo]);
+    const bad = makeBackup([rec()], new Date(), [{ ...photo, type: 'text/html' }]);
+    expect(() => parseBackup(JSON.stringify(bad))).toThrow(/Photo 1/);
+    // A version 1 file (no photos) still imports.
+    expect(parseBackup(JSON.stringify({ ...makeBackup([rec()]), version: 1, photos: undefined })).displays).toHaveLength(1);
+  });
+
   it('never overwrites: a display that already exists comes in as a copy', () => {
     const incoming = [rec(), { ...rec(), id: 'other' }];
     let n = 0;

@@ -336,7 +336,9 @@ export function buildDisplay(text: string, options: BuildOptions = {}): BuildRes
     comments,
     trailingBlank: trailingBlank || undefined,
     copiedFrom: previous?.display.copiedFrom,
+    views: previous?.display.views,
   };
+  if (!display.views?.length) delete display.views;
   if (!display.trailingBlank) delete display.trailingBlank;
   if (!display.copiedFrom) delete display.copiedFrom;
   if (display.year === undefined) delete display.year;
