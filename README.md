@@ -1,10 +1,10 @@
 # Wiring Sketchpad
 
 *Repository: Holiday Wiring Diagram Builder.* **[Open the app](https://jacobmgoodnight.github.io/Holiday-Wiring-Diagram-Builder/)**
-(after GitHub Pages is turned on: Settings → Pages → Source: GitHub Actions).
 
-Fast, local-first sketchpad for holiday display power wiring (Christmas and Halloween).
-Type an indented outline, or (from Phase 2) tap preset icons, and see the power tree.
+Fast, local-first planner for holiday display power wiring (Christmas and Halloween): tap
+to build what plugs into what, see it as a clean diagram and on a photo of your house, then
+install and tear it down from a checklist.
 
 > **Planning aid only**, not an electrical inspection.
 
@@ -13,7 +13,42 @@ typing or tapping, see it on a photo of your house with glowing lights, install 
 down from a checklist, copy it for next year, print cord labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
 data model, phases and the decisions that need your review.
 
-## Outline in 30 seconds
+## Using it
+
+* **Tap to build:** "+" on any item, or tap an "Unused socket", then pick an icon. The picker
+  suggests what fits there (gear under outlets, "Another Spotlight" when filling a splitter).
+  The item appears already plugged in.
+* **Selected item:** a bar of one-tap actions: **+ Plug in**, **+ Into S01** (another item
+  next to it), **Duplicate**, **Rename**, **Move…**, **Fold**, **Delete**. Details (kind, qty,
+  length, status, tags, notes) are in the panel on the right, or under **Details** on a phone.
+* **Keyboard (computer):** select an item, then <kbd>Tab</kbd> plug something in,
+  <kbd>Enter</kbd> add another next to it, <kbd>Ctrl/⌘ D</kbd> duplicate, <kbd>F2</kbd> or
+  double-click rename, arrows move around, <kbd>Space</kbd> fold, <kbd>Delete</kbd> remove,
+  <kbd>/</kbd> find. ⋯ → Shortcuts and colours lists them all.
+* **Find** (🔍 or <kbd>/</kbd>): jump to any item by ID, name, tag or storage spot, even on
+  another outlet. **Fold** a branch to hide what is plugged into it; folds are remembered
+  on this device. Exports always show everything.
+* **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
+  drag it, or drag a preset from the palette onto a socket.
+* **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
+* **Photo** (top toggle): add a photo of your house (or the sample house), draw light runs
+  along the roofline, drop items where they go, and press 🌙 Night to preview. Measure a
+  known length once and every run shows its feet.
+* **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
+  boxes. Ticks update the same plan the diagram shows.
+* **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
+  Cord and plug labels, Download items as CSV, Back up all displays (JSON), Import a backup,
+  Delete.
+* **My presets**: "Save as preset" on any item; it then shows in the picker.
+* **Back up regularly** (⋯ → Back up all displays). Everything lives only in this browser,
+  and clearing site data deletes it. Nothing is uploaded.
+* Phones open one outlet at a time; tap **Overall** for everything. **Fit** never shrinks
+  text below readable size; pan instead.
+* After the first visit it works offline, and can be added to the iPhone home screen.
+
+## Edit as text (⋯ menu)
+
+For pasting a list or bulk edits, the plan can also be edited as an indented outline:
 
 ```
 # Christmas 2026
@@ -38,31 +73,6 @@ O01 Front porch outlet @15A GFCI
 * `Unused socket` records an empty socket. `#` lines are comments; a top-level `#` is a heading.
 * IDs (`O01` outlet, `K01` smart plug, `C01` cord, `S01` splitter, `T01` tote, `P01`
   controller, `L01` load) are assigned automatically and never renumbered when you insert lines.
-
-## Using it
-
-* **Tap to build:** "+" on any item, or tap an "Unused socket", then pick an icon. The item
-  appears already plugged in; edit details in the panel only if you want to.
-* **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
-  drag it, or drag a preset from the palette onto a socket.
-* **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
-* **Photo** (top toggle): add a photo of your house (or the sample house), draw light runs
-  along the roofline, drop items where they go, and press 🌙 Night to preview. Measure a
-  known length once and every run shows its feet.
-* **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
-  boxes. Ticks update the same plan the diagram shows.
-* **⋯ menu**: Copy for next year, Changes since last year, Restore points, Cord and plug
-  labels, Download items as CSV, Back up all displays (JSON), Import a backup, Delete.
-* **My presets**: "Save as preset" on any item; it then shows in the picker and as
-  suggestions while you type in the outline.
-* **Back up regularly** (⋯ → Back up all displays). Everything else lives only in this
-  browser, and clearing site data deletes it.
-
-* Phones open one outlet at a time; tap **Overall** for everything. Desktops open Overall.
-* Tap an item in the diagram to highlight its outline line, or put the cursor on a line to
-  highlight the item. **Fit** never shrinks text below readable size; pan instead.
-* Everything saves automatically in this browser. Nothing is uploaded.
-* After the first visit it works offline, and can be added to the iPhone home screen.
 
 ## Develop
 
@@ -92,7 +102,11 @@ src/outline/lineMatch.ts              line diff used to carry IDs across edits
 src/diagram/layout.ts                 tree layout per outlet (pure, shared with export)
 src/diagram/svg.ts                    standalone SVG export
 src/diagram/Diagram.tsx               React Flow view, readable fit
-src/ui/OutlineEditor.tsx              textarea with line gutter and error markers
+src/ui/OutlineEditor.tsx, TextSheet.tsx  "Edit as text": textarea with line gutter and error markers
+src/ui/SelectionBar.tsx               one-tap actions for the selected item
+src/ui/FindBox.tsx, HelpSheet.tsx     find; shortcuts and colour legend
+src/model/navigate.ts                 arrow-key navigation, find
+src/presets/suggest.ts                picker suggestions by context
 src/ui/PresetPicker.tsx               icon picker (Recent, Favourites, search)
 src/ui/NodePanel.tsx                  item details panel
 src/model/actions.ts                  add / re-plug / unplug / delete / edit (pure, tested)
@@ -108,5 +122,5 @@ src/presets/custom.ts                 save as preset, outline autocomplete
 src/photo/                            photo overlay: geometry, actions, editor, pane
 src/store/db.ts                       IndexedDB (Dexie), serialized writes
 public/sw.js                          offline app shell
-tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance, field mode, library/labels/backup, photo
+tests/*.spec.ts                       Playwright: smoke, tap editing, O02 acceptance, plan keyboard/find/fold, field mode, library/labels/backup, photo
 ```

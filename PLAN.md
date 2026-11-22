@@ -283,3 +283,45 @@ Decisions:
 * **D26. Photos are stored once and shared** by copies and restore points; removing a photo
   view keeps the image until the display is deleted (so Undo can bring it back). JSON
   backups (format v2) include the photos; v1 backups still import.
+
+## Plan experience round (after Phase 6)
+
+You asked to drop the text/list input from the Plan screen and make planning faster, after
+what other tools do well. The closest relatives of a "what plugs into what" tree are
+mind-map apps (MindNode, XMind) and diagram tools (Lucidchart, draw.io, Miro); on phones,
+map-style apps put actions for the selected thing in a bottom sheet.
+
+* **The canvas gets the screen.** The outline pane is gone from Plan (and Photo). The text
+  editor still exists under ⋯ → **Edit as text…** for pasting a list; it applies live with
+  undo, highlights the selected item's line and keeps autocomplete.
+* **Selection bar** for the selected item: + Plug in, + Into <parent> (sibling), Duplicate,
+  Rename, Move…, Fold/Unfold, Delete. Phones: a bottom bar plus a Details sheet. Wide
+  screens: an always-present inspector on the right (so selecting never resizes the canvas);
+  narrower windows: it floats over the canvas while something is selected.
+* **Mind-map keyboard**: Tab child, Enter sibling, Ctrl/⌘+D duplicate, F2/double-click
+  rename on the canvas, arrows navigate (left = what it plugs into), Space fold, Delete,
+  / find, Esc. Shortcuts and a colour legend are under ⋯ → Shortcuts and colours.
+* **Picker suggestions by context** ("Suggested here"): gear under outlets and plugs,
+  splitters after cords, "Another <item>" when filling a splitter or adding beside, another
+  run under a light string that daisy-chains.
+* **Find** by ID, name, tag or storage spot; jumping unfolds and switches outlet as needed.
+* **Fold branches**; a "+N" pill unfolds. Remembered per display on this device. Exports
+  (SVG/PNG) always include folded items.
+* **Overview minimap** on large screens, only when the plan cannot fit at readable size
+  (toggle in ⋯).
+
+Decisions:
+
+* **D27. The outline is no longer on screen** (your call); "Edit as text" keeps the
+  paste/bulk path and the round-trip guarantees.
+* **D28. Duplicate is a new physical item** (new ID) into the parent's next free socket;
+  status, notes, photo spots and anything plugged into the original are not copied. When the
+  splitter is full it still adds (socket N+1) and says so.
+* **D29. Delete removes only the item**; what was plugged into it stays, unplugged, and the
+  selection moves to its parent. "Delete with N below" in the details removes a branch.
+* **D30. Selecting only scrolls when the item is hidden**; after adding, the view also
+  frames the column to its right (its free sockets). Moving the canvas under the pointer
+  broke double-click.
+
+Bugs fixed along the way: dialogs (Edit as text, Copy for next year) stole focus back on
+every keystroke; the details panel covered photo markers; the minimap covered items.
