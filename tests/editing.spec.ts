@@ -17,7 +17,7 @@ async function bringIntoView(page: Page, target: Locator): Promise<number> {
     const p = await pane.boundingBox();
     if (!t || !p) throw new Error('missing box');
     const top = p.y + 56; // below the toolbar
-    const dx = t.x < p.x + 4 ? p.x + 24 - t.x : t.x + t.width + 20 > p.x + p.width ? p.x + p.width - 24 - (t.x + t.width) : 0;
+    const dx = t.x < p.x + 4 ? p.x + 24 - t.x : t.x + t.width + 4 > p.x + p.width ? p.x + p.width - 24 - (t.x + t.width) : 0;
     const dy = t.y < top ? top + 12 - t.y : t.y + t.height > p.y + p.height - 4 ? p.y + p.height - 24 - (t.y + t.height) : 0;
     if (!dx && !dy) return pans;
     const start = await page.evaluate(({ x, y, w, h }) => {
@@ -51,8 +51,8 @@ test.describe('phone', () => {
     let taps = 0;
     let pans = 0;
     const tap = async (l: Locator) => {
-      // Picker tiles are in the dialog; only diagram targets may need a pan.
-      if (!(await page.getByRole('dialog').count())) pans += await bringIntoView(page, l);
+      // Only things on the canvas may need a pan (not picker tiles or the selection bar).
+      if (!(await page.getByRole('dialog').count()) && (await l.evaluate((e) => !!e.closest('.react-flow')))) pans += await bringIntoView(page, l);
       await l.click();
       taps++;
     };
@@ -68,8 +68,11 @@ test.describe('phone', () => {
       await tap(node(page, `Unused socket ${port} on S01`));
       await tap(pick(page, preset));
     }
-    for (const preset of ['Projector', 'Fan', '3-way splitter']) {
-      await tap(plus(page, 'T01'));
+    await tap(plus(page, 'T01'));
+    await tap(pick(page, 'Projector'));
+    // The view follows the new item; "+ Into T01" in the selection bar adds next to it.
+    for (const preset of ['Fan', '3-way splitter']) {
+      await tap(page.getByRole('region', { name: /^Selected L\d+$/ }).getByRole('button', { name: '+ Into T01' }));
       await tap(pick(page, preset));
     }
     const seconds = (Date.now() - started) / 1000;
