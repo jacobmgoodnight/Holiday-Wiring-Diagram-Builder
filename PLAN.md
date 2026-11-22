@@ -96,7 +96,7 @@ and install/teardown.
 | 2 ✅ | "+" on nodes/sockets, icon picker (Recent/Favorites/search), node panel, drag to re-plug, two-way sync, undo/redo (50+) | O02 branch rebuilt with taps only in < 1 min at phone size (Playwright) |
 | 3 ⏸ | *Deferred at your request (not focusing on watts/load).* Load roll-ups, 80 % circuit badges, shared circuits, rating warnings, pixel helper, Needs-attention view | Fixture + Christmas fixture show correct estimates |
 | 4 ✅ | Field mode checklist, statuses, restore points, copy-from-last-year, tags, new-this-year | |
-| 5 | Custom presets, equipment library autocomplete, label sheet, JSON/CSV, storage locations | |
+| 5 ✅ | Custom presets, equipment library autocomplete, label sheet, JSON/CSV, storage locations | |
 | 6 | Optional photo overlay (seam: per-node `position` map keyed by view id) | |
 
 ## Decisions made (tell me if any are wrong)
@@ -216,3 +216,36 @@ Decisions:
   deleting would change wiring. Delete them yourself when they are gone.
 * **D19. Packed and storage spot are model-only** (not written into the outline): they are
   seasonal field state, not part of the plan you type.
+
+## Phase 5 status
+
+Works:
+
+* **Save as preset** (item panel): kind, name, length, colour and socket count, never
+  connections or status. Your presets appear first in the picker ("My presets", removable),
+  in the desktop palette, and as **outline autocomplete**: type two or more letters on a
+  line and tap a suggestion to fill it in (indentation and socket prefix are kept).
+* **Cord and plug labels** (⋯ menu), in your style: `C02: K01-left → S02`. Options: also
+  lights and props, both ends of each cord (`C02 plug → K01-left`, `C02 end → S02`),
+  storage spot. Formats: plain paper small (≈2 × 0.75 in) or large (≈3.5 × 1.25 in) with
+  dashed cut lines (Print prints only the labels), or label maker: one line per label to
+  copy, or a CSV to import into P-touch Editor / Dymo Connect.
+* **CSV of items**: one row per item with what it plugs into, socket, link type, status,
+  qty, length, sockets, tags, storage, flags and notes. Cells that a spreadsheet would run
+  as a formula are neutralised.
+* **JSON backup / import** of every display (outline + model, full fidelity). Import is
+  validated with a readable reason when a file is wrong, and never overwrites: a display
+  that already exists here comes in as "(imported)".
+
+Decisions:
+
+* **D20. Label-maker output is text, not a device driver.** One line per label works with
+  any label maker app; the CSV works with the "database" import in P-touch Editor and
+  Dymo Connect. Tape width can be chosen there once you pick a printer.
+* **D21. Walls are not labelled**, and loads only on request: cords and gear are what get
+  mixed up at teardown.
+* **D22. Restore points are not in the JSON backup**: they are a short local undo history;
+  the backup is the durable copy.
+
+Not yet: photo per item (listed under Christmas fields), signal links from the diagram,
+Phase 6 photo overlay.
