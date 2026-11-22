@@ -64,6 +64,7 @@ import { PhotoPane } from './photo/PhotoPane';
 import { OutlineEditor } from './ui/OutlineEditor';
 import { Palette } from './ui/Palette';
 import { PresetPicker } from './ui/PresetPicker';
+import { Sheet } from './ui/Sheet';
 import { ThemeButton } from './ui/ThemeButton';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
@@ -161,6 +162,10 @@ export function App() {
   const [picker, setPicker] = useState<Target | null>(null);
   const [moving, setMoving] = useState<string | undefined>();
   const [toast, setToast] = useState<Toast | null>(null);
+  /** In-page confirmation (browser confirm() is unavailable in some viewers and jarring on phones). */
+  const [ask, setAsk] = useState<{ title: string; message: string; confirm: string; resolve: (ok: boolean) => void } | null>(null);
+  const confirmInApp = (title: string, message: string, confirm: string) =>
+    new Promise<boolean>((resolve) => setAsk({ title, message, confirm, resolve }));
   /** True while another display is being opened: edits wait so they cannot land in the wrong one. */
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<'plan' | 'photo' | 'checklist'>('plan');
@@ -561,7 +566,7 @@ export function App() {
   };
 
   const deletePreset = async (p: Preset) => {
-    if (!window.confirm(`Remove "${p.name}" from My presets? Items already in your displays are not changed.`)) return;
+    if (!(await confirmInApp('Remove preset', `Remove "${p.name}" from My presets? Items already in your displays are not changed.`, 'Remove preset'))) return;
     await deleteCustomPreset(p.id);
     await refreshCustom();
   };
@@ -627,7 +632,7 @@ export function App() {
   };
 
   const removePhotoView = (v: { id: string; name: string }) => {
-    if (!window.confirm(`Remove the photo "${v.name}"? Items stay in your plan; only their spots on this photo are removed. You can undo this.`)) return;
+    // No confirmation: it can be undone from the message that follows.
     act((d) => removeView(d, v.id));
     setViewId(undefined);
     setIntent(undefined);
@@ -672,7 +677,7 @@ export function App() {
 
   const removeCurrent = async () => {
     if (!doc || !persist.current) return;
-    if (!window.confirm(`Delete "${doc.result.display.title}" and its restore points from this browser? This cannot be undone.`)) return;
+    if (!(await confirmInApp('Delete display', `Delete "${doc.result.display.title}" and its restore points from this browser? This cannot be undone. A JSON backup (⋯ menu) keeps a copy.`, 'Delete display'))) return;
     pending.current = null;
     window.clearTimeout(saveTimer.current);
     writeDraft(null);
@@ -687,7 +692,7 @@ export function App() {
 
   const title = display.title;
   const exportSvg = () => downloadSvg(layoutToSvg(layout, title), title);
-  const exportPng = () => downloadPng(layoutToSvg(layout, title), title).catch((e: Error) => alert(e.message));
+  const exportPng = () => downloadPng(layoutToSvg(layout, title), title).catch((e: Error) => showToast(e.message));
   const stats = displayStats(display);
   const highlight = selected ? doc.result.lineNodeIds.indexOf(selected) : -1;
   const options = list.some((d) => d.id === doc.id) ? list : [{ id: doc.id, title }, ...list];
@@ -1002,6 +1007,38 @@ export function App() {
             addPreset(p, t);
           }}
         />
+      )}
+      {ask && (
+        <Sheet
+          title={ask.title}
+          onClose={() => {
+            ask.resolve(false);
+            setAsk(null);
+          }}
+        >
+          <p>{ask.message}</p>
+          <div className="row confirm-row">
+            <button
+              type="button"
+              onClick={() => {
+                ask.resolve(false);
+                setAsk(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="danger-solid"
+              onClick={() => {
+                ask.resolve(true);
+                setAsk(null);
+              }}
+            >
+              {ask.confirm}
+            </button>
+          </div>
+        </Sheet>
       )}
       {toast && (
         <div className="toast" role="status" key={toast.key}>

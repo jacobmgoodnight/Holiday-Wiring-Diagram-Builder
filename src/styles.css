@@ -416,3 +416,6 @@ button.big { min-height: 52px; font-size: 1rem; }
 .photo-box { position: relative; inset: auto; flex: 1; min-height: 0; }
 .photo-banner { position: static; order: -1; transform: none; width: auto; max-width: none; border-radius: 0; border-width: 0 0 1px; box-shadow: none; justify-content: flex-start; padding: 6px 10px; }
 .photo-fit { top: 10px; }
+
+.confirm-row { display: flex; gap: 8px; justify-content: flex-end; }
+button.danger-solid { background: var(--err); border-color: var(--err); color: #fff; }

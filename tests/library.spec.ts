@@ -43,11 +43,11 @@ test('save an item as a preset, add it, autocomplete it, remove it', async ({ pa
   await expect(outline(page)).toHaveValue(/\n    green cord 25ft$/);
 
   // Remove it from My presets.
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Fit', exact: true }).click();
   await page.locator('.react-flow__node[aria-label^="S01"]').click();
   await page.getByRole('region', { name: 'Details for S01' }).getByRole('button', { name: '+ Plug something in' }).click();
   await dialog.getByRole('button', { name: 'Remove my preset Green 25' }).click();
+  await page.getByRole('dialog', { name: 'Remove preset' }).getByRole('button', { name: 'Remove preset' }).click();
   await expect(dialog.getByRole('heading', { name: 'My presets' })).toHaveCount(0);
 });
 

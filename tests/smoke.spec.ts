@@ -67,3 +67,18 @@ test('a second display is kept separately', async ({ page }) => {
   await page.getByRole('combobox', { name: 'Display' }).selectOption({ label: 'Garage test' });
   await expect(outline(page)).toHaveValue('# Garage test\nO01 Garage outlet\n  Inflatable 120W\n');
 });
+
+test('deleting a display asks in the page, and Cancel keeps it', async ({ page }) => {
+  await page.goto('./');
+  await newDisplay(page);
+  await outline(page).fill('# Keep me\nO01 Porch\n');
+  await page.getByLabel('More display actions').click();
+  await page.getByRole('menuitem', { name: 'Delete this display' }).click();
+  const ask = page.getByRole('dialog', { name: 'Delete display' });
+  await ask.getByRole('button', { name: 'Cancel' }).click();
+  await expect(outline(page)).toHaveValue('# Keep me\nO01 Porch\n');
+  await page.getByLabel('More display actions').click();
+  await page.getByRole('menuitem', { name: 'Delete this display' }).click();
+  await ask.getByRole('button', { name: 'Delete display' }).click();
+  await expect(page.getByRole('combobox', { name: 'Display' }).locator('option', { hasText: 'Keep me' })).toHaveCount(0);
+});

@@ -124,7 +124,6 @@ test('desktop: drag a marker to move it; removing the photo can be undone', asyn
   const after = (await marker.boundingBox())!;
   expect(after.x - before.x).toBeGreaterThan(80);
 
-  page.once('dialog', (d) => void d.accept());
   await page.getByLabel('Photo options').click();
   await page.getByRole('menuitem', { name: 'Remove this photo' }).click();
   await expect(page.getByRole('button', { name: 'Try it with a sample house' })).toBeVisible();
