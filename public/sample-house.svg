@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb3e6"/><stop offset="1" stop-color="#d9ecfb"/></linearGradient>
+    <linearGradient id="lawn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6fa35a"/><stop offset="1" stop-color="#4f8040"/></linearGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect y="720" width="1600" height="280" fill="url(#lawn)"/>
+  <!-- garage wing -->
+  <rect x="980" y="470" width="420" height="260" fill="#e9e2d4" stroke="#b9ad97" stroke-width="3"/>
+  <polygon points="950,480 1190,330 1430,480" fill="#5b5f66" stroke="#43464b" stroke-width="4"/>
+  <rect x="1040" y="540" width="300" height="190" fill="#d6cdbb" stroke="#a89d86" stroke-width="3"/>
+  <g stroke="#b9ae98" stroke-width="2"><line x1="1040" y1="585" x2="1340" y2="585"/><line x1="1040" y1="630" x2="1340" y2="630"/><line x1="1040" y1="675" x2="1340" y2="675"/></g>
+  <!-- main house -->
+  <rect x="300" y="420" width="700" height="310" fill="#efe8da" stroke="#b9ad97" stroke-width="3"/>
+  <polygon points="260,430 650,190 1040,430" fill="#5b5f66" stroke="#43464b" stroke-width="4"/>
+  <rect x="560" y="300" width="60" height="110" fill="#8a6f5a"/>
+  <!-- porch -->
+  <rect x="560" y="560" width="200" height="170" fill="#e2d9c6" stroke="#b9ad97" stroke-width="3"/>
+  <polygon points="540,570 660,500 780,570" fill="#6a6e75" stroke="#43464b" stroke-width="3"/>
+  <rect x="625" y="600" width="70" height="130" fill="#7a4b32" stroke="#5a3523" stroke-width="3"/>
+  <circle cx="682" cy="668" r="4" fill="#e0c27a"/>
+  <!-- windows -->
+  <g fill="#a9c8e2" stroke="#ffffff" stroke-width="6">
+    <rect x="360" y="490" width="140" height="110"/><rect x="830" y="490" width="120" height="110"/>
+    <rect x="420" y="330" width="90" height="70"/><rect x="760" y="330" width="90" height="70"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="4"><line x1="430" y1="490" x2="430" y2="600"/><line x1="890" y1="490" x2="890" y2="600"/></g>
+  <!-- path, bushes, tree -->
+  <polygon points="640,730 680,730 760,1000 560,1000" fill="#c9c1b1"/>
+  <polygon points="1080,730 1300,730 1420,1000 980,1000" fill="#b8b2a6"/>
+  <g fill="#3f6b33"><ellipse cx="380" cy="725" rx="70" ry="40"/><ellipse cx="500" cy="728" rx="60" ry="34"/><ellipse cx="850" cy="726" rx="70" ry="38"/></g>
+  <rect x="150" y="600" width="26" height="160" fill="#6b4a33"/>
+  <polygon points="163,380 70,640 256,640" fill="#2f5d2a"/>
+  <text x="1580" y="990" font-family="sans-serif" font-size="22" fill="#2b3a24" text-anchor="end" opacity="0.6">Sample house (illustration)</text>
+</svg>

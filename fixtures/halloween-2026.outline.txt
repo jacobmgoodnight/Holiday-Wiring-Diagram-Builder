@@ -1,0 +1,62 @@
+# Halloween 2026
+O01 Front porch outlet
+  K01 Kasa 2-port smart plug
+    left: C02 black cord 10ft
+      S02 4-way splitter
+        1: Pumpkin arch
+        2: 6.5-ft Ultra Skelly
+        3: S08 3-way splitter [installed]
+          1: C08 brown cord 3-socket end
+            Carved pumpkin 1, C7 flicker bulb
+            Carved pumpkin 2, C7 flicker bulb
+            Carved pumpkin 3, C7 flicker bulb
+          2: C09 short black cord
+            Carved pumpkin 4, C7 flicker bulb
+          3: Skull Stack
+        4: Orange Ultra Skelly spotlight
+    right: S03 green 3-way yard stake
+      1: Porch UV spotlight
+      2: C03 long green multi-outlet extension
+        tap: Tombstone spotlight (inline)
+        end: C04 ~5ft cord
+          12-ft Skelly spotlight
+        tap: S04 3-way under 12-ft Skelly (yard tap)
+          1: 12-ft Skelly
+          2: C06 ~15ft green cord
+            Groundbreaker blacklight
+          3: C07 ~10ft cord
+            Singing-pumpkin tote [tote]
+              Epson EX3210 + Micca G3 (HDMI-to-VGA)
+              Fan
+              Micca 3.5mm AUX -> rechargeable speaker (signal)
+      3: Unused socket
+
+O02 Garage-side outlet
+  K02 Kasa 2-port smart plug (1 port used)
+    C01 ~25ft green cord
+      S01 4-way splitter under scarecrow
+        1: 15-ft scarecrow
+        2: Orange spotlight A
+        3: Orange spotlight B
+        4: Outdoor garage tote [tote]
+          Epson 880 + Micca 4K
+          PC cooling fan
+          Internal 3-way
+
+O03 Back porch outlet (temporary fog branch)
+  C05 long temporary rear-to-side cord
+    S07 3-way power inside Husky work tote
+      Marine blower
+      Pond mister
+      Fog machine
+
+# Indoor, power/signal only
+Office outlet
+  Always-on ESP32
+    ~BLE 6.5-ft Ultra Skelly
+Garage window
+  Kasa smart plug / Micca G3
+    ~HDMI Dukane 8120WIA
+Upstairs window
+  Smart plug / AGPTEK
+    ~HDMI Dukane 8120WIA
