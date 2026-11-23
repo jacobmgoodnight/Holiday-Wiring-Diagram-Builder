@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
 import { expectText, newDisplay, openDetails } from './helpers';
 
@@ -220,4 +220,53 @@ test('strands snap end to end, a gap gets a sized extension cord, and females sp
   await expect(page.locator('[data-wire="L01>L04"]')).toHaveCount(1);
   await expectText(page, { contains: 'C9 roofline run\n  end: C9 roofline run\n' });
   await expectText(page, { contains: '  Wreath\n' });
+});
+
+test('save the photo with its lights as a picture, and get a shopping list with footage', async ({ page }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: /Measure/ }).click();
+  await tap(page, 1040, 760);
+  await tap(page, 1340, 760);
+  await page.getByRole('button', { name: 'Double garage door 16 ft' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+  for (const [x, y] of [[260, 430], [650, 190]] as const) await tap(page, x, y);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // The picture: a JPEG of the photo with the lights, day or night.
+  await page.getByRole('button', { name: 'Save picture' }).first().click();
+  const sheet = page.getByRole('dialog', { name: 'Save picture' });
+  await expect(sheet.locator('.picture-preview img')).toBeVisible();
+  let dl = page.waitForEvent('download');
+  await sheet.getByRole('button', { name: 'Save picture' }).click();
+  let file = await dl;
+  expect(file.suggestedFilename()).toMatch(/-sample-house\.jpg$/);
+  const path = (await file.path())!;
+  expect(readFileSync(path).subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8])); // JPEG
+  expect(statSync(path).size).toBeGreaterThan(20_000);
+  await sheet.getByRole('group', { name: 'Look' }).getByRole('button', { name: '🌙 Night' }).click();
+  await expect(sheet.locator('.picture-preview img:not(.busy)')).toBeVisible();
+  dl = page.waitForEvent('download');
+  await sheet.getByRole('button', { name: 'Save picture' }).click();
+  file = await dl;
+  expect(file.suggestedFilename()).toMatch(/-night\.jpg$/);
+  await page.keyboard.press('Escape');
+
+  // The shopping list: feet from the measured photo, bulbs at 12 in.
+  await page.getByLabel('More display actions').click();
+  await page.getByRole('menuitem', { name: 'Shopping list…' }).click();
+  const list = page.getByRole('dialog', { name: 'Shopping list' });
+  const lights = list.getByRole('region', { name: 'Lights along the house' });
+  await expect(lights).toContainText('C9/C7 lights · Warm white · 12″ apart');
+  await expect(lights).toContainText('~24 ft');
+  await expect(lights).toContainText('≈ 25 bulbs');
+  dl = page.waitForEvent('download');
+  await list.getByRole('button', { name: 'Download CSV' }).click();
+  file = await dl;
+  expect(file.suggestedFilename()).toMatch(/-shopping-list\.csv$/);
+  expect(readFileSync((await file.path())!, 'utf8')).toContain('section,item,quantity,detail,ids');
+  // An ID jumps to that item.
+  await list.getByRole('button', { name: 'L01' }).click();
+  await expect(page.getByRole('region', { name: 'Selected L01' })).toBeVisible();
 });

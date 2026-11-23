@@ -7,6 +7,7 @@ import type { Target } from '../model/actions';
 import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, unplaced } from './geometry';
 import type { LightOpts } from './LightOptions';
 import { type LightNode, PhotoEditor, type PhotoIntent } from './PhotoEditor';
+import { PictureSheet } from './Picture';
 
 /** Light styles offered by "Draw lights" (built-in presets): along the house, and on bushes. */
 const RUN_PRESETS = ['c9', 'c9stringer', 'mini', 'icicle', 'pathway'];
@@ -45,6 +46,7 @@ interface Props {
   /** Add extension cords automatically when a strand does not reach. */
   autoCords: boolean;
   onToggleAutoCords: () => void;
+  onShoppingList: () => void;
   blocked?: Set<string>;
   fitKey: string;
   /** Phone: the selection bar replaces the photo actions while something is selected. */
@@ -56,7 +58,11 @@ export function PhotoPane(props: Props) {
   const file = useRef<HTMLInputElement>(null);
   const [night, setNight] = useState(false);
   const [wiring, setWiring] = useState(true);
-  const [sheet, setSheet] = useState<null | 'draw' | 'plan'>(null);
+  const [sheet, setSheet] = useState<null | 'draw' | 'plan' | 'picture'>(null);
+  const closeMenu = (e: React.MouseEvent) => {
+    const d = (e.currentTarget as HTMLElement).closest('details');
+    if (d) d.open = false;
+  };
   const selected = props.selectedId ? display.nodes[props.selectedId] : undefined;
   const list = view ? unplaced(display, view.id) : [];
 
@@ -124,9 +130,32 @@ export function PhotoPane(props: Props) {
           <button type="button" aria-pressed={props.intent?.type === 'scale'} className={view.feetPerPx ? 'on' : ''} onClick={() => props.setIntent({ type: 'scale' })} title="Measure: set the photo's scale">
             📏 {view.feetPerPx ? 'Scale set' : 'Measure'}
           </button>
+          <button type="button" onClick={() => setSheet('picture')} title="Save the photo with its lights as a picture" aria-label="Save picture">
+            📸
+          </button>
           <details className="menu">
             <summary aria-label="Photo options">⋯</summary>
             <div className="menu-list" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  closeMenu(e);
+                  setSheet('picture');
+                }}
+              >
+                📸 Save picture…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  closeMenu(e);
+                  props.onShoppingList();
+                }}
+              >
+                🧾 Shopping list…
+              </button>
               <label className="menu-check" role="menuitemcheckbox" aria-checked={props.autoCords}>
                 <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />
                 Add extension cords when a strand does not reach
@@ -227,6 +256,8 @@ export function PhotoPane(props: Props) {
           ))}
         </Sheet>
       )}
+
+      {sheet === 'picture' && <PictureSheet display={display} view={view} photoUrl={props.photoUrl} night={night} onClose={() => setSheet(null)} />}
 
       {sheet === 'plan' && (
         <Sheet title="Place from plan" onClose={() => setSheet(null)}>

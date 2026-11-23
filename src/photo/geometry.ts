@@ -57,13 +57,14 @@ const NAMED: [RegExp, string][] = [
   [/\b(yellow|gold)\b/, '#ffd60a'],
   [/\bwhite\b/, COOL],
 ];
-const MULTI = ['#ff3b30', '#30d158', '#3a8bff', '#ff9f0a', '#bf5af2'];
+/** Classic multicolour: red, green, blue, orange, yellow. */
+const MULTI = ['#ff3b30', '#30d158', '#3a8bff', '#ff9f0a', '#ffd60a'];
 
 /** Bulb colour choices offered when drawing and in an item's details. */
 export const PALETTES: { id: string; name: string; colors: string[] }[] = [
   { id: 'warm', name: 'Warm white', colors: [WARM] },
   { id: 'cool', name: 'Cool white', colors: [COOL] },
-  { id: 'multi', name: 'Multicolor', colors: ['#ff3b30', '#30d158', '#3a8bff', '#ff9f0a', '#ffd60a'] },
+  { id: 'multi', name: 'Multicolor', colors: MULTI },
   { id: 'red', name: 'Red', colors: ['#ff3b30'] },
   { id: 'green', name: 'Green', colors: ['#30d158'] },
   { id: 'blue', name: 'Blue', colors: ['#3a8bff'] },

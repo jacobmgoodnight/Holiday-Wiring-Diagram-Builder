@@ -5,10 +5,10 @@ export function fileSlug(title: string): string {
 }
 
 export function downloadText(text: string, filename: string, type: string) {
-  download(new Blob([text], { type }), filename);
+  downloadBlob(new Blob([text], { type }), filename);
 }
 
-function download(blob: Blob, filename: string) {
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -20,7 +20,7 @@ function download(blob: Blob, filename: string) {
 }
 
 export function downloadSvg(svg: string, title: string) {
-  download(new Blob([svg], { type: 'image/svg+xml' }), `${fileSlug(title)}.svg`);
+  downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${fileSlug(title)}.svg`);
 }
 
 /** Safari refuses canvases above ~16.7 million pixels, so large diagrams get a lower scale. */
@@ -50,7 +50,7 @@ export async function downloadPng(svg: string, title: string): Promise<void> {
     ctx.drawImage(img, 0, 0, w, h);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!blob) throw new Error('Could not create the PNG');
-    download(blob, `${fileSlug(title)}.png`);
+    downloadBlob(blob, `${fileSlug(title)}.png`);
   } finally {
     URL.revokeObjectURL(url);
   }

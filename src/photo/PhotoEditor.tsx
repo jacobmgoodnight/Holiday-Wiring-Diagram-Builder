@@ -699,25 +699,25 @@ export function PhotoEditor(props: Props) {
 }
 
 /** Glass shapes (unit size, socket at the origin, pointing up) and per-colour glow. */
-function BulbDefs({ colors }: { colors: string[] }) {
+export function BulbDefs({ colors }: { colors: string[] }) {
   return (
     <defs>
       <g id="bulb-c9">
         <path d="M-0.3,-0.3 C-0.7,-0.78 -0.55,-1.6 0,-2.3 C0.55,-1.6 0.7,-0.78 0.3,-0.3 Z" stroke="rgba(0,0,0,0.4)" strokeWidth={0.07} />
         <path d="M-0.2,-0.62 C-0.38,-0.95 -0.3,-1.4 -0.08,-1.8" fill="none" stroke="#fff" strokeOpacity={0.6} strokeWidth={0.1} strokeLinecap="round" />
-        <rect x={-0.31} y={-0.4} width={0.62} height={0.52} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+        <line x1={0} y1={-0.42} x2={0} y2={0.12} strokeWidth={0.62} />
       </g>
       <g id="bulb-c9-lit">
-        <path d="M-0.3,-0.3 C-0.7,-0.78 -0.55,-1.6 0,-2.3 C0.55,-1.6 0.7,-0.78 0.3,-0.3 Z" />
-        <rect x={-0.31} y={-0.4} width={0.62} height={0.52} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+        <path d="M-0.3,-0.3 C-0.7,-0.78 -0.55,-1.6 0,-2.3 C0.55,-1.6 0.7,-0.78 0.3,-0.3 Z" stroke="none" />
+        <line x1={0} y1={-0.42} x2={0} y2={0.12} strokeWidth={0.62} />
       </g>
       <g id="bulb-mini">
         <path d="M0,-0.3 C-0.42,-0.55 -0.4,-1.45 0,-1.9 C0.4,-1.45 0.42,-0.55 0,-0.3 Z" stroke="rgba(0,0,0,0.4)" strokeWidth={0.08} />
-        <rect x={-0.22} y={-0.4} width={0.44} height={0.5} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+        <line x1={0} y1={-0.42} x2={0} y2={0.1} strokeWidth={0.44} />
       </g>
       <g id="bulb-mini-lit">
-        <path d="M0,-0.3 C-0.42,-0.55 -0.4,-1.45 0,-1.9 C0.4,-1.45 0.42,-0.55 0,-0.3 Z" />
-        <rect x={-0.22} y={-0.4} width={0.44} height={0.5} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+        <path d="M0,-0.3 C-0.42,-0.55 -0.4,-1.45 0,-1.9 C0.4,-1.45 0.42,-0.55 0,-0.3 Z" stroke="none" />
+        <line x1={0} y1={-0.42} x2={0} y2={0.1} strokeWidth={0.44} />
       </g>
       {colors.map((c, i) => (
         <g key={c}>
@@ -750,7 +750,7 @@ interface MarkerProps {
   onUp: (e: RPointerEvent) => void;
 }
 
-function Marker({ node, at, r, u, selected, target, dim, onDown, onMove, onUp }: MarkerProps) {
+export function Marker({ node, at, r, u, selected, target, dim, onDown, onMove, onUp }: MarkerProps) {
   const c = TONE_COLORS[toneOf(node)];
   const labelW = (node.id.length * 8 + 12) * u;
   return (
@@ -794,6 +794,8 @@ interface LightsProps {
   target?: boolean;
   /** The live preview while drawing: not interactive. */
   draft?: boolean;
+  /** No ID and length label (saved pictures). */
+  hideLabel?: boolean;
   onDown?: (e: RPointerEvent, vertex?: number) => void;
   onMove?: (e: RPointerEvent) => void;
   onUp?: (e: RPointerEvent) => void;
@@ -806,8 +808,8 @@ const DROPS = [6, 10, 14, 8, 12, 7, 11];
  * wire, minis, ground stakes, icicle drops, a net or a wrapped bush; glowing at night.
  * Real sizes and spacing once the photo has a scale, but never too small to see.
  */
-function Lights(props: LightsProps) {
-  const { node, placement, view, u, ub, night, grad, selected, editable, dim, target, draft, onDown, onMove, onUp } = props;
+export function Lights(props: LightsProps) {
+  const { node, placement, view, u, ub, night, grad, selected, editable, dim, target, draft, hideLabel, onDown, onMove, onUp } = props;
   const area = placement.kind === 'area';
   const style = runStyle(node);
   const shape = useMemo(() => shapePx(placement, view, node.smooth) ?? [], [placement, view.width, view.height, node.smooth]);
@@ -854,7 +856,7 @@ function Lights(props: LightsProps) {
     const c = colors[i % colors.length];
     const fill = night ? `url(#${grad(c)}-lit)` : c;
     if (shapeKind === 'pixel') return <circle key={i} cx={p[0]} cy={p[1]} r={w / 2} fill={fill} stroke={night ? 'none' : 'rgba(0,0,0,0.45)'} strokeWidth={0.6 * ub} />;
-    return <use key={i} href={`#${sym}${lit}`} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})${rot ? ` rotate(${rot})` : ''} scale(${w.toFixed(2)})`} fill={fill} />;
+    return <use key={i} href={`#${sym}${lit}`} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})${rot ? ` rotate(${rot})` : ''} scale(${w.toFixed(2)})`} fill={fill} stroke={wire} />;
   };
   const halo = (p: Pt, i: number, up: number) => {
     const c = colors[i % colors.length];
@@ -918,7 +920,6 @@ function Lights(props: LightsProps) {
   return (
     <g
       className={`run${area ? ' bush' : ''}${selected ? ' selected' : ''}${dim ? ' dim' : ''}${target ? ' target' : ''}${draft ? ' draft-run' : ''}`}
-      style={{ ['--sock' as string]: wire }}
       onPointerMove={onMove}
       onPointerUp={onUp}
       pointerEvents={draft ? 'none' : undefined}
@@ -953,7 +954,7 @@ function Lights(props: LightsProps) {
         )}
         {style === 'plain' && !area && !cord && <polyline points={line} fill="none" stroke={colors[0]} strokeWidth={5 * u} strokeDasharray={`${2 * u} ${6 * u}`} strokeLinecap="round" />}
         {body}
-        <g transform={`translate(${lx} ${ly - 18 * u - lift})`}>
+        <g transform={`translate(${lx} ${ly - 18 * u - lift})`} display={hideLabel ? 'none' : undefined}>
           <rect x={-labelW / 2} y={-12 * u} width={labelW} height={18 * u} rx={5 * u} fill="rgba(255,255,255,0.92)" stroke="#475569" strokeWidth={u} />
           <text y={1.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
             {label}

@@ -50,6 +50,9 @@ data model, phases and the decisions that need your review.
   * **Inline females**: select a zip cord or light string → **✂️ Add inline female** and
     tap where it goes. Drag a female to slide it; tap an open one to plug a strand or a new
     item into it (or remove it). Females keep what is plugged into them when renumbered.
+  * **📸 Save picture**: the photo with its lights drawn on, day or night, as a JPEG to keep
+    or (on a phone) share. Lights only for family; add items, labels and cords for whoever
+    helps install.
   * **Measure** offers common sizes: double garage door 16 ft, single 8–9 ft, front door
     3 ft wide and 6 ft 8 in tall, a window often 3 ft (they vary from 2 to 4 ft). Lengths
     from a photo are estimates: things nearer or farther than what you measured scale
@@ -60,8 +63,13 @@ data model, phases and the decisions that need your review.
   that shows on the diagram.
 * **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
   boxes. Ticks update the same plan the diagram shows.
+* **Shopping list** (⋯ menu, or the photo's ⋯): feet of lights by type, colour and spacing
+  (bulb counts for C9s and stakes, plus 10% for corners), bushes with net counts, zip cord
+  and its females, extension cords by length, gear and props. Lengths come from each item,
+  or from the measured photo (~). "Only items marked New this year" lists what to buy.
+  Copy as text or download a CSV; tap an ID to jump to that item.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
-  Cord and plug labels, Download items as CSV, Back up all displays (JSON), Import a backup,
+  Cord and plug labels, Shopping list, Download items as CSV, Back up all displays (JSON), Import a backup,
   Delete.
 * **My presets**: "Save as preset" on any item; it then shows in the picker.
 * **Back up regularly** (⋯ → Back up all displays). Everything lives only in this browser,

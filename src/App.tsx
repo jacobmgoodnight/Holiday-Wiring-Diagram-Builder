@@ -61,6 +61,7 @@ import { FindBox } from './ui/FindBox';
 import { HelpSheet } from './ui/HelpSheet';
 import { NodePanel } from './ui/NodePanel';
 import { SelectionBar } from './ui/SelectionBar';
+import { ShoppingSheet } from './ui/ShoppingSheet';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
 import { addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeView, setPlacement, spliceFemale, updateView } from './photo/actions';
@@ -236,6 +237,7 @@ export function App() {
   const lastAuto = useRef(new Map<string, number>());
   const [custom, setCustom] = useState<Preset[]>([]);
   const [labelsOpen, setLabelsOpen] = useState(false);
+  const [shoppingOpen, setShoppingOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const refreshCustom = useCallback(async () => {
     if (persist.current) setCustom(await listCustomPresets());
@@ -476,7 +478,7 @@ export function App() {
           doRedo();
         }
       }
-      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || (phone && detailsOpen));
+      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || (phone && detailsOpen));
       if (e.key === 'Escape' && !picker && !photoPicker && !sheetOpen) {
         if (findOpen) setFindOpen(false);
         else if (intent) setIntent(undefined);
@@ -1069,6 +1071,9 @@ export function App() {
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabelsOpen(true); }}>
                 Cord and plug labels…
               </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShoppingOpen(true); }}>
+                Shopping list…
+              </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
                 Download items as CSV
               </button>
@@ -1223,6 +1228,7 @@ export function App() {
               onMoveTap={slideFemale}
               onRemoveFemale={dropFemale}
               autoCords={autoCords}
+              onShoppingList={() => setShoppingOpen(true)}
               onToggleAutoCords={() => {
                 const next = !autoCords;
                 setAutoCords(next);
@@ -1358,6 +1364,18 @@ export function App() {
       )}
       {dialog === 'changes' && changes && (
         <ChangesDialog source={changes.source} changes={changes.list} onShow={showOnDiagram} onClose={() => setDialog(null)} />
+      )}
+      {shoppingOpen && (
+        <ShoppingSheet
+          display={display}
+          onDownloadCsv={(csv) => downloadText(csv, `${fileSlug(title)}-shopping-list.csv`, 'text/csv')}
+          onPick={(id) => {
+            setShoppingOpen(false);
+            if (mode === 'plan') jumpTo(id);
+            else setSelected(id);
+          }}
+          onClose={() => setShoppingOpen(false)}
+        />
       )}
       {labelsOpen && (
         <LabelSheet

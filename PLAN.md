@@ -404,3 +404,27 @@ Decisions:
   spots on the run's other photos to even spacing, so numbers and spots never disagree.
 * **D35. Auto cords only where a strand is involved** and the gap is over 1.5 ft; they are
   ordinary items (undo removes them, delete or re-plug like any cord).
+
+## Shopping list and saved pictures
+
+The two gaps you picked from the photo builder round.
+
+* **Shopping list** (`src/export/takeoff.ts`, pure). Lights drawn as runs are grouped by
+  type, colours and spacing: feet (the item's length, else measured on a photo, marked ~),
+  bulbs for C9/C7 and ground stakes (split by colour as they repeat along the run), and
+  "buy ~N ft with 10% for corners". Lit bushes list their size and, for nets, how many
+  4×6 ft nets cover the front. Zip cord: feet plus inline and end females. Extension cords
+  by length and colour; splitters, timers, controllers and props by name. Retired items are
+  left out; "Only New this year" keeps just the purchases. Copy as text, CSV, IDs jump.
+* **Save picture** (`src/photo/Picture.tsx`). The overlay is rendered once more as a
+  standalone SVG at the photo's own size (as if shown 1400 px wide, so bulbs stay visible),
+  drawn over the photo on a canvas, darkened for the night look, and saved as JPEG. Share
+  appears where the browser can share files (phones). Bulb sockets now take the wire colour
+  from the stroke instead of a CSS variable, so the same shapes work inside an image.
+
+Decisions:
+
+* **D36. Lights only by default** in pictures (no IDs, markers or cords): it is the picture
+  you show people. Zip cord drawn along the house counts as wiring and shows with cords.
+* **D37. Multicolor means red, green, blue, orange, yellow** everywhere (the name and the
+  palette now agree).
