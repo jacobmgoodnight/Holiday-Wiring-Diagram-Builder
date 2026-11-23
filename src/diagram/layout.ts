@@ -4,8 +4,11 @@
  * Layout never changes the model or its connections.
  */
 import { subtreeIds } from '../model/actions';
-import { powerChildren, socketLabels, unusedSockets } from '../model/graph';
+import { isRun, powerChildren, runSockets, socketLabels, unusedSockets } from '../model/graph';
 import type { Display, DisplayNode, SignalType } from '../model/types';
+
+/** Socket names for people: "tap1" reads "tap 1". */
+export const prettyPort = (p: string | undefined) => (p && /^tap\d+$/.test(p) ? `tap ${p.slice(3)}` : p);
 
 export type Tone = 'power' | 'load' | 'media' | 'new' | 'retired' | 'unused';
 
@@ -125,6 +128,7 @@ const fmt = (n: number) => String(Number(n.toFixed(2)));
 
 export function metaOf(node: DisplayNode): string | undefined {
   const parts = [
+    node.location ? `📍 ${node.location}` : '',
     node.qty !== undefined ? `x${node.qty}` : '',
     node.lengthFt !== undefined ? `${node.lengthApprox ? '~' : ''}${fmt(node.lengthFt)} ft` : '',
     node.watts !== undefined ? `${node.wattsApprox ? '~' : ''}${fmt(node.watts)} W` : '',
@@ -178,7 +182,10 @@ export function clusterMembers(display: Display): { root: string; members: strin
 
 export function clusterTitle(display: Display, root: string): string {
   const n = display.nodes[root];
-  return n.kind === 'outlet' ? `${n.id} ${n.label}`.trim() : 'Not plugged in yet';
+  if (n.kind !== 'outlet') return 'Not plugged in yet';
+  const name = `${n.id} ${n.label}`.trim();
+  // "O01 Outlet · Front porch", unless the name already says where it is.
+  return n.location && !n.label.toLowerCase().includes(n.location.toLowerCase()) ? `${name} · ${n.location}` : name;
 }
 
 export function layoutDisplay(display: Display, options: LayoutOptions = {}): Layout {
@@ -233,18 +240,20 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
       const labels = socketLabels(display, id);
       const usedLabels = new Set([...labels.values()].filter(Boolean) as string[]);
       let ghostN = 0;
+      const names = runSockets(display.nodes[id]);
+      const ghostText = names || isRun(display.nodes[id]) ? 'Open female' : 'Unused socket';
       const addGhost = (label: string | undefined) => {
         const gid = `ghost:${id}:${ghostN++}`;
-        boxes.set(gid, { id: gid, type: 'ghost', parentId: id, port: label, cluster: cluster.id, x: 0, y: 0, w: GHOST_W, h: GHOST_H, tone: 'unused', lines: ['Unused socket'] });
+        boxes.set(gid, { id: gid, type: 'ghost', parentId: id, port: label, cluster: cluster.id, x: 0, y: 0, w: GHOST_W, h: GHOST_H, tone: 'unused', lines: [ghostText] });
         add(id, gid);
-        edges.push({ id: `e:${gid}`, source: id, target: gid, kind: 'power', label });
+        edges.push({ id: `e:${gid}`, source: id, target: gid, kind: 'power', label: prettyPort(label) });
       };
       const out = display.links.filter((l) => l.from === id).sort((a, b) => a.seq - b.seq);
       for (const link of out) {
         if (link.kind === 'power' && link.to === null) addGhost(labels.get(link.id));
         else if (link.kind === 'power' && link.to && memberSet.has(link.to)) {
           add(id, link.to);
-          edges.push({ id: link.id, source: id, target: link.to, kind: 'power', label: labels.get(link.id) });
+          edges.push({ id: link.id, source: id, target: link.to, kind: 'power', label: prettyPort(labels.get(link.id)) });
         } else if (link.kind === 'signal' && link.owns && link.to && memberSet.has(link.to)) {
           add(id, link.to);
           edges.push({ id: link.id, source: id, target: link.to, kind: 'signal', label: link.signalType?.toUpperCase(), signalType: link.signalType });
@@ -254,6 +263,13 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
       const explicit = powerChildren(display, id).filter((l) => l.to === null).length;
       let next = 1;
       for (let i = explicit; i < unusedSockets(display, id); i++) {
+        if (names) {
+          // Runs: the open inline females and end female, in order.
+          const name = names.find((n) => !usedLabels.has(n));
+          if (name) usedLabels.add(name);
+          addGhost(name);
+          continue;
+        }
         while (usedLabels.has(String(next))) next++;
         usedLabels.add(String(next));
         // A single-output item (a plain cord) has an unnumbered end, as in the outline.

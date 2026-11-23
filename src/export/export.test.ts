@@ -52,9 +52,9 @@ describe('CSV', () => {
     const csv = displayToCsv(built().display);
     const lines = csv.trim().split('\r\n');
     expect(lines).toHaveLength(56);
-    expect(lines[0]).toBe('id,kind,name,plugs_into,socket,link,status,qty,length_ft,sockets,tags,storage,new_this_year,retired,notes');
-    expect(lines).toContain('C02,cord,black cord,K01,left,power,planned,,10,,,,,,');
-    expect(lines).toContain('C04,cord,cord,C03,end,power,planned,,~5,,,,,,');
+    expect(lines[0]).toBe('id,kind,name,plugs_into,socket,link,status,qty,length_ft,sockets,tags,location,storage,new_this_year,retired,notes');
+    expect(lines).toContain('C02,cord,black cord,K01,left,power,planned,,10,,,,,,,');
+    expect(lines).toContain('C04,cord,cord,C03,end,power,planned,,~5,,,,,,,');
     expect(lines.find((l) => l.startsWith('S08,'))).toContain(',installed,');
   });
 });

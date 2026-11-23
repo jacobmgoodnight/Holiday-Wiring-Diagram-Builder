@@ -33,7 +33,20 @@ data model, phases and the decisions that need your review.
 * **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
 * **Photo** (top toggle): add a photo of your house (or the sample house), draw light runs
   along the roofline, drop items where they go, and press 🌙 Night to preview. Measure a
-  known length once and every run shows its feet.
+  known length once and every run shows its feet and bulb count.
+  * **+ Plug in** on a selected item puts the new item on the photo with its cord drawn
+    from that item. Something added with **+ Add item** asks what it plugs into right away.
+    Cables take the colour of the cord in between (and name it, "C01"); they attach at the
+    end female or the nearest point of a light run.
+  * **Draw lights**: pick a style, tap along the house, and set **bulb colours, spacing**
+    (C9/C7 and ground stakes 12″ by default, minis 4″), **wire colour** and **Smooth
+    curves** (rounded corners, on by default for ground stakes) while you draw. Bulbs are
+    drawn as C9 glass, minis, stakes or icicle drops at real spacing.
+  * **On bushes and trees**: net lights or a mini-light wrap; tap around the bush.
+* **Christmas runs**: an **SPT-1 zip cord** or **C9 stringer** can have inline females
+  (vampire plugs) plus one at the end. Set them in the details (Females on this run); plug
+  into "tap 1", "tap 2"… or "end". Outlets have a **Location** (Front porch, Left side…)
+  that shows on the diagram.
 * **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
   boxes. Ticks update the same plan the diagram shows.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
@@ -63,7 +76,8 @@ O01 Front porch outlet @15A GFCI
 ```
 
 * Two spaces of indentation = "plugged into the line above". Tabs count as two spaces.
-* `left:` `right:` `1:` `tap:` `end:` name the socket. Without one, children are numbered in order.
+* `left:` `right:` `1:` `tap1:` `end:` name the socket. Without one, children are numbered in
+  order (on runs: tap 1, tap 2… then end).
 * `@15A`, `GFCI`, `10ft`, `~5ft` (approx), `x2`, `300W`, `2.5A` anywhere on a line.
   Watts and amps are the **total for the line**.
 * `[cord]`, `[load]`, `[tote]` force the kind; `[installed]`, `[verified]`, `[new]`,

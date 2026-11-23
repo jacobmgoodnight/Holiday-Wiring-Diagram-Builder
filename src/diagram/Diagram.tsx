@@ -18,7 +18,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Target } from '../model/actions';
-import type { Cluster, Layout, LayoutNode } from './layout';
+import { type Cluster, type Layout, type LayoutNode, prettyPort } from './layout';
 import { TONE_COLORS } from './svg';
 
 type ItemNode = Node<{ ln: LayoutNode; selected: boolean }, 'item'>;
@@ -98,7 +98,7 @@ const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
           <span className="ghost-plus" aria-hidden="true">
             +
           </span>{' '}
-          Unused socket
+          {ln.lines[0]}
         </div>
       ) : id && renamingId === id ? (
         <>
@@ -288,7 +288,7 @@ function DiagramInner(props: DiagramProps) {
         width: ln.w,
         height: ln.h,
         zIndex: drag?.id === ln.id ? 10 : 0,
-        ariaLabel: ln.type === 'ghost' ? `Unused socket${ln.port ? ` ${ln.port}` : ''} on ${ln.parentId}: add an item` : ln.lines.join(' '),
+        ariaLabel: ln.type === 'ghost' ? `${ln.lines[0]}${ln.port ? ` ${prettyPort(ln.port)}` : ''} on ${ln.parentId}: add an item` : ln.lines.join(' '),
       })),
     ],
     [layout, selectedId, drag, canDrag],

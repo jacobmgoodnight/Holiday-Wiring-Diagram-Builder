@@ -1,5 +1,32 @@
 /** Read-only graph helpers shared by the diagram, checks and tests. */
-import type { Display, Link } from './types';
+import type { Display, DisplayNode, Link } from './types';
+
+/** Light strings that have female connectors (end-to-end, or inline taps). */
+export const RUN_CATEGORIES = new Set(['c9', 'mini', 'icicle', 'pathway']);
+
+/** SPT-1 zip cord, multi-outlet cords and light strings: a wire with female taps along it. */
+export function isRun(node: Pick<DisplayNode, 'kind' | 'subtype' | 'category'> | undefined): boolean {
+  if (!node) return false;
+  if (node.kind === 'cord') return node.subtype === 'spt' || node.subtype === 'multi-outlet';
+  return node.kind === 'load' && RUN_CATEGORIES.has(node.category ?? '');
+}
+
+/**
+ * Socket names of a run with a known socket count: inline females `tap1`…`tapN`, then `end`
+ * (unless it has no female at the end). Undefined for anything else.
+ */
+export function runSockets(node: DisplayNode | undefined): string[] | undefined {
+  if (!node || !isRun(node) || node.outputs === undefined) return undefined;
+  const end = node.endFemale !== false;
+  const taps = Math.max(0, node.outputs - (end ? 1 : 0));
+  return [...Array.from({ length: taps }, (_, i) => `tap${i + 1}`), ...(end ? ['end'] : [])];
+}
+
+/** Inline female taps on a run (0 when it has none or is not a run). */
+export function inlineFemales(node: DisplayNode | undefined): number {
+  const names = runSockets(node);
+  return names ? names.filter((n) => n.startsWith('tap')).length : 0;
+}
 
 export function powerChildren(display: Display, nodeId: string): Link[] {
   return display.links.filter((l) => l.kind === 'power' && l.from === nodeId).sort((a, b) => a.seq - b.seq);
@@ -16,6 +43,27 @@ export function powerParent(display: Display, nodeId: string): Link | undefined 
 export function socketLabels(display: Display, nodeId: string): Map<string, string | undefined> {
   const children = powerChildren(display, nodeId);
   const node = display.nodes[nodeId];
+  const names = runSockets(node);
+  if (names) {
+    // Runs: unlabelled items fill the inline females in order, then the end female.
+    const taken = new Set(children.map((l) => l.port).filter(Boolean) as string[]);
+    const out = new Map<string, string | undefined>();
+    let extra = names.filter((n) => n.startsWith('tap')).length;
+    for (const link of children) {
+      if (link.port) {
+        out.set(link.id, link.port);
+        continue;
+      }
+      let name = names.find((n) => !taken.has(n));
+      if (!name) {
+        while (taken.has(`tap${++extra}`));
+        name = `tap${extra}`;
+      }
+      taken.add(name);
+      out.set(link.id, name);
+    }
+    return out;
+  }
   const numbered = (node?.outputs ?? 0) > 1 || children.length > 1;
   const used = new Set(children.map((l) => l.port).filter((p): p is string => !!p && /^\d+$/.test(p)));
   const out = new Map<string, string | undefined>();

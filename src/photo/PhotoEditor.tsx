@@ -1,27 +1,45 @@
 import { type PointerEvent as RPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { toneOf } from '../diagram/layout';
+import type { Target } from '../model/actions';
 import type { Display, DisplayNode, Placement, PhotoView } from '../model/types';
 import { iconFor } from '../presets/custom';
 import { TONE_COLORS } from '../diagram/svg';
 import {
   type Pt,
+  areaBulbs,
+  areaSizeFt,
+  areaStyle,
+  bounds,
   bulbColors,
+  bulbCount,
   bulbSpacingPx,
+  cablePath,
   feetPerPxFrom,
+  footPx,
   pointsAlong,
-  runLengthFt,
+  polylineLength,
   runStyle,
+  shapePx,
+  spacingInOf,
   toFrac,
   toPx,
+  wireColorOf,
   wiringLines,
 } from './geometry';
+import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
 
 /** What the next tap on the photo does. */
 export type PhotoIntent =
-  | { type: 'place'; nodeId?: string; presetId?: string; name: string }
-  | { type: 'draw'; nodeId?: string; presetId?: string; name: string }
+  /** Tap once to put an item (or a new one from a preset) on the photo. */
+  | { type: 'place'; nodeId?: string; presetId?: string; name: string; target?: Target }
+  /** Tap along the house to draw lights; `area` outlines a bush instead. */
+  | { type: 'draw'; nodeId?: string; presetId?: string; name: string; target?: Target; area?: boolean }
   | { type: 'scale' }
-  | { type: 'move'; nodeId: string };
+  /** Tap what this item plugs into; `fresh` right after adding it ("Later" instead of Cancel). */
+  | { type: 'move'; nodeId: string; fresh?: boolean };
+
+/** What a light item looks like: a plan item, or a preset about to become one. */
+export type LightNode = Pick<DisplayNode, 'id' | 'kind' | 'label' | 'category' | 'color' | 'bulbColors' | 'spacingIn' | 'smooth' | 'wireColor'>;
 
 interface Props {
   display: Display;
@@ -30,9 +48,13 @@ interface Props {
   selectedId?: string;
   onSelect: (id: string | undefined) => void;
   intent?: PhotoIntent;
+  /** The item (or preset) being drawn or placed, for the live preview and its options. */
+  draftBase?: LightNode;
   onCancelIntent: () => void;
   onPlacePoint: (intent: PhotoIntent, at: Pt) => void;
-  onFinishRun: (intent: PhotoIntent, points: Pt[]) => void;
+  onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts) => void;
+  /** Add the new item to the plan without putting it on the photo. */
+  onSkipPlacing?: (intent: PhotoIntent) => void;
   onSetScale: (feetPerPx: number) => void;
   onMovePlacement: (nodeId: string, placement: Placement) => void;
   /** Move intent: plug the moving item into the tapped one. */
@@ -51,9 +73,11 @@ interface Xf {
 }
 
 const TAP_SLOP = 6;
+/** Bulb sizes follow the zoom in steps, so pinching does not redraw every frame. */
+const quantize = (k: number) => Math.pow(1.2, Math.round(Math.log(k) / Math.log(1.2)));
 
 export function PhotoEditor(props: Props) {
-  const { display, view, photoUrl, selectedId, intent, night, wiring } = props;
+  const { display, view, photoUrl, selectedId, intent, night, wiring, draftBase } = props;
   const box = useRef<HTMLDivElement>(null);
   const [xf, setXf] = useState<Xf>({ x: 0, y: 0, k: 0.3 });
   const xfRef = useRef(xf);
@@ -61,6 +85,9 @@ export function PhotoEditor(props: Props) {
   const [draft, setDraft] = useState<Pt[]>([]); // fractions, for draw and scale
   const [feet, setFeet] = useState('');
   const [preview, setPreview] = useState<{ nodeId: string; placement: Placement } | null>(null);
+  const [opts, setOpts] = useState<LightOpts | undefined>();
+  // Light options while drawing: open on wide screens, a tap away on phones.
+  const [showStyle, setShowStyle] = useState(() => typeof window === 'undefined' || window.innerWidth >= 720);
 
   // ---- Fit the photo into the box.
   const fit = () => {
@@ -78,6 +105,7 @@ export function PhotoEditor(props: Props) {
   useEffect(() => {
     setDraft([]);
     setFeet('');
+    setOpts(intent?.type === 'draw' && draftBase ? lightOptsOf(draftBase) : undefined);
   }, [intent]);
 
   // When the box changes size (details panel opens, phone rotates): re-fit if the photo was
@@ -199,9 +227,10 @@ export function PhotoEditor(props: Props) {
     if (d.base.kind === 'point') {
       const [x, y] = shift([d.base.x, d.base.y]);
       next = { kind: 'point', x, y };
-    } else if (d.vertex !== undefined) {
-      next = { kind: 'path', points: d.base.points.map((q, i) => (i === d.vertex ? shift(q) : q)) };
-    } else next = { kind: 'path', points: d.base.points.map(shift) };
+    } else {
+      const points = d.vertex !== undefined ? d.base.points.map((q, i) => (i === d.vertex ? shift(q) : q)) : d.base.points.map(shift);
+      next = { kind: d.base.kind, points };
+    }
     setPreview({ nodeId: d.id, placement: next });
   };
   const endDrag = (e: RPointerEvent) => {
@@ -221,26 +250,50 @@ export function PhotoEditor(props: Props) {
     setPreview(null);
   };
 
-  // ---- Data to draw.
+  // ---- Data to draw (a drag in progress shows where it will land, cables included).
+  const live = useMemo(() => {
+    if (!preview || !display.nodes[preview.nodeId]) return display;
+    const n = display.nodes[preview.nodeId];
+    return { ...display, nodes: { ...display.nodes, [n.id]: { ...n, placements: { ...n.placements, [view.id]: preview.placement } } } };
+  }, [display, preview, view.id]);
   const placed = useMemo(() => {
     const out: { node: DisplayNode; placement: Placement }[] = [];
-    for (const n of Object.values(display.nodes)) {
-      const p = preview?.nodeId === n.id ? preview.placement : n.placements?.[view.id];
+    for (const n of Object.values(live.nodes)) {
+      const p = n.placements?.[view.id];
       if (p) out.push({ node: n, placement: p });
     }
-    // Runs underneath, markers on top; the selected item last.
-    return out.sort((a, b) => Number(a.placement.kind === 'point') - Number(b.placement.kind === 'point') || Number(a.node.id === selectedId) - Number(b.node.id === selectedId));
-  }, [display, view.id, preview, selectedId]);
-  const lines = useMemo(() => (wiring ? wiringLines(display, view.id) : []), [display, view.id, wiring]);
+    // Bushes underneath, then runs, markers on top; the selected item last.
+    const layer = (p: Placement) => (p.kind === 'area' ? 0 : p.kind === 'path' ? 1 : 2);
+    return out.sort((a, b) => layer(a.placement) - layer(b.placement) || Number(a.node.id === selectedId) - Number(b.node.id === selectedId));
+  }, [live, view.id, selectedId]);
+  const lines = useMemo(() => (wiring ? wiringLines(live, view) : []), [live, view, wiring]);
 
   const k = xf.k;
   const u = 1 / k; // one screen pixel in photo pixels
+  const ub = 1 / quantize(k);
   const markerR = 17 * u;
   const drawPx = draft.map((p) => toPx(p, view));
   const movingId = intent?.type === 'move' ? intent.nodeId : undefined;
+  const plugTarget = (intent?.type === 'place' || intent?.type === 'draw') && intent.target ? intent.target.parent : undefined;
 
   const scalePx = intent?.type === 'scale' && draft.length === 2 ? drawPx : null;
   const scaleFeet = Number(feet);
+
+  const drawing = intent?.type === 'draw' ? intent : undefined;
+  const draftNode = drawing && draftBase ? { ...draftBase, ...(opts ?? {}) } : undefined;
+  const draftPlacement: Placement | undefined =
+    drawing && draft.length >= (drawing.area ? 3 : 2) ? { kind: drawing.area ? 'area' : 'path', points: draft } : undefined;
+
+  // One glass and one halo gradient per bulb colour in use.
+  const colors = useMemo(() => {
+    const set = new Set<string>();
+    for (const { node, placement } of placed) if (placement.kind !== 'point') bulbColors(node).forEach((c) => set.add(c));
+    if (draftNode) bulbColors(draftNode).forEach((c) => set.add(c));
+    return [...set];
+  }, [placed, draftNode?.bulbColors?.join(), draftNode?.label]);
+  const grad = (c: string) => `bc${Math.max(0, colors.indexOf(c))}`;
+
+  const lightsProps = (node: LightNode, placement: Placement) => ({ node, placement, view, u, ub, night, grad });
 
   return (
     <div className={`photo${night ? ' night' : ''}`}>
@@ -258,41 +311,69 @@ export function PhotoEditor(props: Props) {
         <div className="photo-stage" style={{ transform: `translate(${xf.x}px, ${xf.y}px) scale(${k})`, width: view.width, height: view.height }}>
           {photoUrl ? <img src={photoUrl} alt="" width={view.width} height={view.height} draggable={false} /> : <div className="photo-missing">Loading photo…</div>}
           <svg className="photo-svg" width={view.width} height={view.height} viewBox={`0 0 ${view.width} ${view.height}`}>
-            <defs>
-              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation={Math.max(1.2, 1.8 * u)} result="b" />
-                <feMerge>
-                  <feMergeNode in="b" />
-                  <feMergeNode in="b" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-
-            {lines.map((l) => {
-              const a = toPx(l.from, view);
-              const b = toPx(l.to, view);
-              return <line key={`w-${l.childId}`} className="wire-line" x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${6 * u}`} />;
-            })}
+            <BulbDefs colors={colors} />
 
             {placed.map(({ node, placement }) =>
-              placement.kind === 'path' ? (
-                <Run
+              placement.kind === 'area' ? (
+                <Lights
                   key={node.id}
-                  node={node}
-                  points={placement.points.map((p) => toPx(p, view))}
-                  view={view}
-                  u={u}
-                  night={night}
+                  {...lightsProps(node, placement)}
                   selected={node.id === selectedId}
                   editable={node.id === selectedId && !intent}
                   dim={!!movingId && (node.id === movingId || !!props.blocked?.has(node.id))}
-                  lengthFt={runLengthFt(placement, view)}
+                  target={(!!movingId && node.id !== movingId && !props.blocked?.has(node.id)) || node.id === plugTarget}
                   onDown={(e, vertex) => startDrag(e, node.id, placement, vertex)}
                   onMove={moveDrag}
                   onUp={endDrag}
                 />
-              ) : (
+              ) : null,
+            )}
+
+            {lines.map((l) => {
+              const hot = selectedId === l.childId || selectedId === l.parentId;
+              const d = cablePath(l.from, l.to);
+              const sag = Math.min(Math.hypot(l.to[0] - l.from[0], l.to[1] - l.from[1]) * 0.18, 400);
+              const mid: Pt = [(l.from[0] + l.to[0]) / 2, (l.from[1] + l.to[1]) / 2 + sag / 2];
+              const via = l.via.join(', ');
+              return (
+                <g key={`w-${l.childId}`} className={`cable${hot ? ' hot' : ''}`} pointerEvents="none">
+                  <path d={d} fill="none" stroke={hot ? '#f59e0b' : 'rgba(0,0,0,0.55)'} strokeWidth={(hot ? 6 : 4.2) * u} strokeLinecap="round" />
+                  <path
+                    className="wire-line"
+                    data-wire={`${l.parentId}>${l.childId}`}
+                    d={d}
+                    fill="none"
+                    stroke={l.color}
+                    strokeWidth={2.4 * u}
+                    strokeLinecap="round"
+                  />
+                  <rect x={l.from[0] - 3.5 * u} y={l.from[1] - 3.5 * u} width={7 * u} height={7 * u} rx={1.5 * u} fill={l.color} stroke="rgba(0,0,0,0.7)" strokeWidth={u} />
+                  {via && (
+                    <g transform={`translate(${mid[0]} ${mid[1]})`}>
+                      <rect x={-(via.length * 3.7 + 6) * u} y={-8 * u} width={(via.length * 7.4 + 12) * u} height={15 * u} rx={4 * u} fill="rgba(255,255,255,0.92)" stroke={l.color} strokeWidth={u} />
+                      <text y={3.5 * u} fontSize={10.5 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
+                        {via}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+
+            {placed.map(({ node, placement }) =>
+              placement.kind === 'path' ? (
+                <Lights
+                  key={node.id}
+                  {...lightsProps(node, placement)}
+                  selected={node.id === selectedId}
+                  editable={node.id === selectedId && !intent}
+                  dim={!!movingId && (node.id === movingId || !!props.blocked?.has(node.id))}
+                  target={(!!movingId && node.id !== movingId && !props.blocked?.has(node.id)) || node.id === plugTarget}
+                  onDown={(e, vertex) => startDrag(e, node.id, placement, vertex)}
+                  onMove={moveDrag}
+                  onUp={endDrag}
+                />
+              ) : placement.kind === 'point' ? (
                 <Marker
                   key={node.id}
                   node={node}
@@ -300,20 +381,26 @@ export function PhotoEditor(props: Props) {
                   r={markerR}
                   u={u}
                   selected={node.id === selectedId}
-                  target={!!movingId && node.id !== movingId && !props.blocked?.has(node.id)}
+                  target={(!!movingId && node.id !== movingId && !props.blocked?.has(node.id)) || node.id === plugTarget}
                   dim={!!movingId && (node.id === movingId || !!props.blocked?.has(node.id))}
                   onDown={(e) => startDrag(e, node.id, placement)}
                   onMove={moveDrag}
                   onUp={endDrag}
                 />
-              ),
+              ) : null,
             )}
 
-            {intent?.type === 'draw' && drawPx.length > 0 && (
+            {drawing && draftNode && draftPlacement && <Lights {...lightsProps(draftNode, draftPlacement)} draft />}
+            {drawing && drawPx.length > 0 && (
               <g className="draft">
-                <polyline points={drawPx.map((p) => p.join(',')).join(' ')} fill="none" strokeWidth={3 * u} />
+                <polyline
+                  points={[...drawPx, ...(drawing.area && drawPx.length > 2 ? [drawPx[0]] : [])].map((p) => p.join(',')).join(' ')}
+                  fill="none"
+                  strokeWidth={1.5 * u}
+                  strokeDasharray={`${5 * u} ${4 * u}`}
+                />
                 {drawPx.map((p, i) => (
-                  <circle key={i} cx={p[0]} cy={p[1]} r={6 * u} />
+                  <circle key={i} cx={p[0]} cy={p[1]} r={(i === 0 ? 7 : 5.5) * u} strokeWidth={2 * u} />
                 ))}
               </g>
             )}
@@ -333,23 +420,56 @@ export function PhotoEditor(props: Props) {
       </div>
 
       {intent && (
-        <div className="photo-banner" role="status">
+        <div className={`photo-banner${drawing ? ' drawing' : ''}`} role="status">
           {intent.type === 'place' && (
-            <span>
-              Tap the photo where <b>{intent.name}</b> goes.
-            </span>
-          )}
-          {intent.type === 'draw' && (
             <>
               <span>
-                Tap along the house to draw <b>{intent.name}</b>. {draft.length ? `${draft.length} point${draft.length === 1 ? '' : 's'}.` : ''}
+                Tap the photo where <b>{intent.name}</b> goes.
+                {intent.target?.parent && (
+                  <>
+                    {' '}
+                    It plugs into <b>{intent.target.parent}</b>
+                    {display.nodes[intent.target.parent]?.placements?.[view.id] ? '.' : ' (not on this photo yet, so no cable is drawn).'}
+                  </>
+                )}
+              </span>
+              {intent.presetId && props.onSkipPlacing && (
+                <button type="button" onClick={() => props.onSkipPlacing!(intent)}>
+                  Add without placing
+                </button>
+              )}
+            </>
+          )}
+          {drawing && (
+            <>
+              <span>
+                {drawing.area ? 'Tap around the bush to outline ' : 'Tap along the house to draw '}
+                <b>{drawing.name}</b>
+                {drawing.target?.parent ? (
+                  <>
+                    {' '}
+                    (plugs into <b>{drawing.target.parent}</b>)
+                  </>
+                ) : null}
+                . {draft.length ? `${draft.length} point${draft.length === 1 ? '' : 's'}.` : drawing.area ? 'Start where it plugs in.' : 'Start at the plug end.'}
               </span>
               <button type="button" disabled={!draft.length} onClick={() => setDraft((d) => d.slice(0, -1))}>
                 Undo point
               </button>
-              <button type="button" className="primary" disabled={draft.length < 2} onClick={() => props.onFinishRun(intent, draft)}>
+              <button type="button" className="primary" disabled={draft.length < (drawing.area ? 3 : 2)} onClick={() => props.onFinishRun(drawing, draft, opts)}>
                 Done
               </button>
+              <button type="button" onClick={props.onCancelIntent}>
+                Cancel
+              </button>
+              {opts && draftNode && runStyle(draftNode) !== 'plain' && (
+                <>
+                  <button type="button" className="style-toggle" aria-expanded={showStyle} onClick={() => setShowStyle((v) => !v)}>
+                    🎨 Style {showStyle ? '▴' : '▾'}
+                  </button>
+                  {showStyle && <LightOptions value={opts} area={drawing.area} onChange={(patch) => setOpts((o) => (o ? { ...o, ...patch } : o))} />}
+                </>
+              )}
             </>
           )}
           {intent.type === 'scale' &&
@@ -375,16 +495,56 @@ export function PhotoEditor(props: Props) {
             ))}
           {intent.type === 'move' && (
             <span>
-              Tap what <b>{intent.nodeId}</b> plugs into.
+              Tap what <b>{intent.nodeId}</b> plugs into{intent.fresh ? ' to run its cord' : ''}.
             </span>
           )}
-          <button type="button" onClick={props.onCancelIntent}>
-            Cancel
-          </button>
+          {!drawing && (
+            <button type="button" onClick={props.onCancelIntent}>
+              {intent.type === 'move' && intent.fresh ? 'Later' : 'Cancel'}
+            </button>
+          )}
         </div>
       )}
-
     </div>
+  );
+}
+
+/** Glass shapes (unit size, socket at the origin, pointing up) and per-colour glow. */
+function BulbDefs({ colors }: { colors: string[] }) {
+  return (
+    <defs>
+      <g id="bulb-c9">
+        <path d="M-0.3,-0.3 C-0.7,-0.78 -0.55,-1.6 0,-2.3 C0.55,-1.6 0.7,-0.78 0.3,-0.3 Z" stroke="rgba(0,0,0,0.4)" strokeWidth={0.07} />
+        <path d="M-0.2,-0.62 C-0.38,-0.95 -0.3,-1.4 -0.08,-1.8" fill="none" stroke="#fff" strokeOpacity={0.6} strokeWidth={0.1} strokeLinecap="round" />
+        <rect x={-0.31} y={-0.4} width={0.62} height={0.52} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+      </g>
+      <g id="bulb-c9-lit">
+        <path d="M-0.3,-0.3 C-0.7,-0.78 -0.55,-1.6 0,-2.3 C0.55,-1.6 0.7,-0.78 0.3,-0.3 Z" />
+        <rect x={-0.31} y={-0.4} width={0.62} height={0.52} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+      </g>
+      <g id="bulb-mini">
+        <path d="M0,-0.3 C-0.42,-0.55 -0.4,-1.45 0,-1.9 C0.4,-1.45 0.42,-0.55 0,-0.3 Z" stroke="rgba(0,0,0,0.4)" strokeWidth={0.08} />
+        <rect x={-0.22} y={-0.4} width={0.44} height={0.5} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+      </g>
+      <g id="bulb-mini-lit">
+        <path d="M0,-0.3 C-0.42,-0.55 -0.4,-1.45 0,-1.9 C0.4,-1.45 0.42,-0.55 0,-0.3 Z" />
+        <rect x={-0.22} y={-0.4} width={0.44} height={0.5} rx={0.08} style={{ fill: 'var(--sock, #1f4d2b)' }} />
+      </g>
+      {colors.map((c, i) => (
+        <g key={c}>
+          <radialGradient id={`bc${i}-lit`} cx="50%" cy="62%" r="62%">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="0.45" stopColor={c} stopOpacity={0.95} />
+            <stop offset="1" stopColor={c} />
+          </radialGradient>
+          <radialGradient id={`bc${i}-halo`}>
+            <stop offset="0" stopColor={c} stopOpacity={0.7} />
+            <stop offset="0.4" stopColor={c} stopOpacity={0.22} />
+            <stop offset="1" stopColor={c} stopOpacity={0} />
+          </radialGradient>
+        </g>
+      ))}
+    </defs>
   );
 }
 
@@ -427,71 +587,237 @@ function Marker({ node, at, r, u, selected, target, dim, onDown, onMove, onUp }:
   );
 }
 
-interface RunProps {
-  node: DisplayNode;
-  points: Pt[];
+interface LightsProps {
+  node: LightNode;
+  placement: Placement;
   view: PhotoView;
+  /** One screen pixel in photo pixels (exact, for outlines and labels). */
   u: number;
+  /** The same, in zoom steps (for bulb sizes and how many to draw). */
+  ub: number;
   night: boolean;
-  selected: boolean;
+  grad: (color: string) => string;
+  selected?: boolean;
   /** Show draggable corner handles (selected, and not placing or drawing). */
-  editable: boolean;
-  dim: boolean;
-  lengthFt?: number;
-  onDown: (e: RPointerEvent, vertex?: number) => void;
-  onMove: (e: RPointerEvent) => void;
-  onUp: (e: RPointerEvent) => void;
+  editable?: boolean;
+  dim?: boolean;
+  /** Can be tapped as what the moving item plugs into. */
+  target?: boolean;
+  /** The live preview while drawing: not interactive. */
+  draft?: boolean;
+  onDown?: (e: RPointerEvent, vertex?: number) => void;
+  onMove?: (e: RPointerEvent) => void;
+  onUp?: (e: RPointerEvent) => void;
 }
 
-/** A light run: cable plus evenly spaced bulbs in the item's colours; glows at night. */
-function Run({ node, points, view, u, night, selected, editable, dim, lengthFt, onDown, onMove, onUp }: RunProps) {
+const DROPS = [6, 10, 14, 8, 12, 7, 11];
+
+/**
+ * A light run or a lit bush, drawn like the real thing: C9/C7 glass bulbs in sockets on the
+ * wire, minis, ground stakes, icicle drops, a net or a wrapped bush; glowing at night.
+ * Real sizes and spacing once the photo has a scale, but never too small to see.
+ */
+function Lights(props: LightsProps) {
+  const { node, placement, view, u, ub, night, grad, selected, editable, dim, target, draft, onDown, onMove, onUp } = props;
+  const area = placement.kind === 'area';
   const style = runStyle(node);
+  const shape = useMemo(() => shapePx(placement, view, node.smooth) ?? [], [placement, view.width, view.height, node.smooth]);
   const colors = bulbColors(node);
-  const spacing = bulbSpacingPx(style, view);
-  // Zoomed out, real spacing can be a few screen pixels: draw every Nth bulb so each one
-  // still reads as a light (zoom in to see them all).
-  const stride = Math.max(1, Math.ceil((10 * u) / spacing));
-  const bulbs = style === 'plain' ? [] : pointsAlong(points, spacing * stride);
-  // Real proportions, but never smaller than a few screen pixels so runs read on a phone.
-  const realR = style === 'c9' ? spacing * 0.2 : style === 'pathway' ? spacing * 0.12 : spacing * 0.28;
-  const bulbR = Math.max(realR, (style === 'c9' || style === 'pathway' ? 2.6 : 1.8) * u);
-  const line = points.map((p) => p.join(',')).join(' ');
-  const label = `${node.id}${lengthFt !== undefined ? ` · ~${Math.round(lengthFt)} ft` : ''}`;
+  const wire = wireColorOf(node);
+  const spacing = bulbSpacingPx(node, view);
+  const inch = footPx(view) / 12;
+  const shapeKind = style === 'c9' || style === 'pathway' ? 'c9' : style === 'pixel' ? 'pixel' : 'mini';
+  const w = shapeKind === 'c9' ? Math.max(1.4 * inch, 5.5 * ub) : shapeKind === 'pixel' ? Math.max(0.6 * inch, 3.4 * ub) : Math.max(0.4 * inch, 2.8 * ub);
+  // Zoomed out, real spacing can be a pixel or two: draw every Nth bulb so each one still
+  // reads as a light (zoom in to see them all).
+  const stride = Math.max(1, Math.ceil((shapeKind === 'c9' ? w * 1.5 : w * 1.9) / spacing));
+  const step = spacing * stride;
+  const net = area && areaStyle(node) === 'net';
+  const bulbs = useMemo(
+    () => (style === 'plain' && !area ? [] : area ? areaBulbs(shape, step, net ? 'net' : 'wrap') : pointsAlong(shape, step)),
+    [shape, step, style, area, net],
+  );
+  const line = shape.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const b = useMemo(() => bounds(shape), [shape]);
+  const wireW = Math.max(0.28 * inch, 1.3 * ub);
+  const sym = shapeKind === 'c9' ? 'bulb-c9' : 'bulb-mini';
+  const lit = night ? '-lit' : '';
+  const fid = `${node.id}${draft ? '-draft' : ''}`;
+
+  // Label: ID, and the length and bulb count (or bush size) once there is a scale.
+  let info = '';
+  if (view.feetPerPx && shape.length > 1) {
+    if (area) {
+      const s = areaSizeFt(placement, view);
+      if (s) info = ` · ~${Math.round(s.w)}×${Math.round(s.h)} ft`;
+    } else {
+      const ft = polylineLength(shape) * view.feetPerPx;
+      info = ` · ~${Math.round(ft)} ft${style !== 'plain' ? ` · ${bulbCount(ft, spacingInOf(node))} bulbs` : ''}`;
+    }
+  }
+  const label = `${draft ? 'New' : node.id}${info}`;
   const labelW = (label.length * 7.4 + 12) * u;
-  const [lx, ly] = points[0];
-  return (
-    <g className={`run${selected ? ' selected' : ''}${dim ? ' dim' : ''}`} onPointerMove={onMove} onPointerUp={onUp} aria-label={`${node.id} ${node.label} light run`} role="button">
-      <polyline points={line} fill="none" stroke="transparent" strokeWidth={22 * u} onPointerDown={(e) => onDown(e)} />
-      <polyline points={line} fill="none" stroke={selected ? '#f59e0b' : night ? '#1c2a1c' : '#2c3e2c'} strokeWidth={(selected ? 3.5 : 2) * u} pointerEvents="none" />
-      <g filter={night ? 'url(#glow)' : undefined} pointerEvents="none">
-        {bulbs.map((b, i) => (
-          <g key={i}>
-            {style === 'icicle' && i % 2 === 0 && <line x1={b[0]} y1={b[1]} x2={b[0]} y2={b[1] + spacing * (1.5 + (i % 3))} stroke={colors[0]} strokeWidth={Math.max(1, bulbR * 0.5)} opacity={0.85} />}
-            {night && <circle cx={b[0]} cy={b[1]} r={bulbR * 2} fill={colors[i % colors.length]} opacity={0.16} />}
-            <circle cx={b[0]} cy={b[1]} r={night ? bulbR * 1.2 : bulbR} fill={colors[i % colors.length]} stroke={night ? 'none' : 'rgba(0,0,0,0.35)'} strokeWidth={0.6 * u} />
-          </g>
+  const [lx, ly] = shape[0] ?? [0, 0];
+  const lift = shapeKind === 'c9' && !area ? 2.4 * w + (style === 'pathway' ? Math.max(6 * inch, 2.2 * w) : 0) : 0;
+
+  const bulb = (p: Pt, i: number, rot = 0) => {
+    const c = colors[i % colors.length];
+    const fill = night ? `url(#${grad(c)}-lit)` : c;
+    if (shapeKind === 'pixel') return <circle key={i} cx={p[0]} cy={p[1]} r={w / 2} fill={fill} stroke={night ? 'none' : 'rgba(0,0,0,0.45)'} strokeWidth={0.6 * ub} />;
+    return <use key={i} href={`#${sym}${lit}`} transform={`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)})${rot ? ` rotate(${rot})` : ''} scale(${w.toFixed(2)})`} fill={fill} />;
+  };
+  const halo = (p: Pt, i: number, up: number) => {
+    const c = colors[i % colors.length];
+    return <circle key={`h${i}`} cx={p[0]} cy={p[1] - up} r={w * (shapeKind === 'c9' ? 3.2 : 3.6)} fill={`url(#${grad(c)}-halo)`} />;
+  };
+
+  // Per-style pieces.
+  let body: React.ReactNode = null;
+  if (area) {
+    const rot = (i: number) => ((i * 53) % 7) * 15 - 45;
+    body = (
+      <>
+        {net ? <NetMesh id={fid} ring={shape} step={step} box={b} wire={wire} width={wireW * 0.8} /> : <polyline points={bulbs.map((p) => p.join(',')).join(' ')} fill="none" stroke={wire} strokeWidth={wireW * 0.8} opacity={0.8} />}
+        {night && bulbs.map((p, i) => halo(p, i, w * 0.9))}
+        {bulbs.map((p, i) => bulb(p, i, shapeKind === 'mini' ? rot(i) : 0))}
+      </>
+    );
+  } else if (style === 'pathway') {
+    const stakeH = Math.max(6 * inch, 2.2 * w);
+    body = (
+      <>
+        {bulbs.map((p, i) => (
+          <line key={`s${i}`} x1={p[0]} y1={p[1]} x2={p[0]} y2={p[1] - stakeH} stroke={wire} strokeWidth={Math.max(0.35 * inch, 1.2 * ub)} strokeLinecap="round" />
         ))}
-      </g>
-      {style === 'plain' && <polyline points={line} fill="none" stroke={colors[0]} strokeWidth={5 * u} strokeDasharray={`${2 * u} ${6 * u}`} strokeLinecap="round" pointerEvents="none" />}
-      <g transform={`translate(${lx} ${ly - 18 * u})`} pointerEvents="none">
-        <rect x={-labelW / 2} y={-12 * u} width={labelW} height={18 * u} rx={5 * u} fill="rgba(255,255,255,0.92)" stroke="#475569" strokeWidth={u} />
-        <text y={1.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
-          {label}
-        </text>
+        {night && bulbs.map((p, i) => halo([p[0], p[1] - stakeH], i, w * 1.2))}
+        {bulbs.map((p, i) => bulb([p[0], p[1] - stakeH], i))}
+      </>
+    );
+  } else if (style === 'icicle') {
+    const unit = Math.max(inch, w / 2.2);
+    const drops = bulbs.map((p, i) => {
+      const len = DROPS[i % DROPS.length] * unit;
+      const n = Math.max(1, Math.round(len / Math.max(3 * inch, 2.2 * w)));
+      return { p, len, on: Array.from({ length: n }, (_, k) => [p[0], p[1] + (len * (k + 1)) / n] as Pt) };
+    });
+    body = (
+      <>
+        {drops.map((d, i) => (
+          <line key={`d${i}`} x1={d.p[0]} y1={d.p[1]} x2={d.p[0]} y2={d.p[1] + d.len} stroke={wire} strokeWidth={wireW * 0.7} />
+        ))}
+        {night && drops.flatMap((d, i) => d.on.map((q, j) => halo(q, i * 7 + j, -w * 0.9)))}
+        {drops.flatMap((d, i) => d.on.map((q, j) => bulb(q, i * 7 + j, 180)))}
+      </>
+    );
+  } else if (style !== 'plain') {
+    const rot = (i: number) => (shapeKind === 'mini' ? (((i * 37) % 3) - 1) * 24 : 0);
+    body = (
+      <>
+        {night && bulbs.map((p, i) => halo(p, i, shapeKind === 'c9' ? w * 1.2 : shapeKind === 'pixel' ? 0 : w * 0.9))}
+        {bulbs.map((p, i) => bulb(p, i, rot(i)))}
+      </>
+    );
+  }
+
+  const ringD = area && shape.length ? `M${line.replace(/ /g, ' L')} Z` : '';
+  const wash = night && style !== 'plain' && shape.length > 1;
+  // Several colours blend into a warm white glow; one colour glows in that colour.
+  const washColor = colors.length > 1 ? '#fff0cc' : colors[0];
+  const pad = 8 * w;
+
+  return (
+    <g
+      className={`run${area ? ' bush' : ''}${selected ? ' selected' : ''}${dim ? ' dim' : ''}${target ? ' target' : ''}${draft ? ' draft-run' : ''}`}
+      style={{ ['--sock' as string]: wire }}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      pointerEvents={draft ? 'none' : undefined}
+      aria-hidden={draft || undefined}
+      aria-label={draft ? undefined : area ? `${node.id} ${node.label} on a bush` : `${node.id} ${node.label} light run`}
+      role={draft ? undefined : 'button'}
+    >
+      {!draft &&
+        (area ? (
+          <path d={ringD} fill="transparent" stroke="transparent" strokeWidth={14 * u} onPointerDown={(e) => onDown?.(e)} />
+        ) : (
+          <polyline points={line} fill="none" stroke="transparent" strokeWidth={22 * u} onPointerDown={(e) => onDown?.(e)} />
+        ))}
+      <g pointerEvents="none" opacity={draft ? 0.85 : undefined}>
+        {wash && (
+          <>
+            <filter id={`wash-${fid}`} filterUnits="userSpaceOnUse" x={b.x0 - pad} y={b.y0 - pad} width={b.x1 - b.x0 + pad * 2} height={b.y1 - b.y0 + pad * 2}>
+              <feGaussianBlur stdDeviation={w * 2.2} />
+            </filter>
+            {area ? (
+              <path d={ringD} fill={washColor} opacity={0.2} filter={`url(#wash-${fid})`} />
+            ) : (
+              <polyline points={line} fill="none" stroke={washColor} strokeWidth={w * 5} strokeLinecap="round" strokeLinejoin="round" opacity={0.26} filter={`url(#wash-${fid})`} transform={`translate(0 ${-lift / 2})`} />
+            )}
+          </>
+        )}
+        {(selected || target) && (area ? <path d={ringD} fill="none" stroke={selected ? '#f59e0b' : '#2563eb'} strokeWidth={3 * u} strokeDasharray={target && !selected ? `${6 * u} ${4 * u}` : undefined} /> : <polyline points={line} fill="none" stroke={selected ? '#f59e0b' : '#2563eb'} strokeWidth={(wireW / u + 5) * u} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={target && !selected ? `${6 * u} ${4 * u}` : undefined} />)}
+        {area ? (
+          <path d={ringD} fill="none" stroke={wire} strokeWidth={wireW * 0.8} opacity={net ? 0.9 : 0.35} />
+        ) : (
+          <polyline points={line} fill="none" stroke={wire} strokeWidth={wireW} strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {style === 'plain' && !area && <polyline points={line} fill="none" stroke={colors[0]} strokeWidth={5 * u} strokeDasharray={`${2 * u} ${6 * u}`} strokeLinecap="round" />}
+        {body}
+        <g transform={`translate(${lx} ${ly - 18 * u - lift})`}>
+          <rect x={-labelW / 2} y={-12 * u} width={labelW} height={18 * u} rx={5 * u} fill="rgba(255,255,255,0.92)" stroke="#475569" strokeWidth={u} />
+          <text y={1.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
+            {label}
+          </text>
+        </g>
       </g>
       {editable &&
-        points.map((p, i) => (
-          <circle
-            key={`v${i}`}
-            className="vertex"
-            cx={p[0]}
-            cy={p[1]}
-            r={9 * u}
-            strokeWidth={2.5 * u}
-            onPointerDown={(e) => onDown(e, i)}
-            aria-label={`Point ${i + 1} of ${node.id}`}
-          />
-        ))}
+        placement.kind !== 'point' &&
+        placement.points.map((p, i) => {
+          const [x, y] = toPx(p, view);
+          return (
+            <circle
+              key={`v${i}`}
+              className="vertex"
+              cx={x}
+              cy={y}
+              r={9 * u}
+              strokeWidth={2.5 * u}
+              onPointerDown={(e) => onDown?.(e, i)}
+              aria-label={`Point ${i + 1} of ${node.id}`}
+            />
+          );
+        })}
     </g>
+  );
+}
+
+/** The diamond mesh of net lights, clipped to the bush outline. */
+function NetMesh({ id, ring, step, box, wire, width }: { id: string; ring: Pt[]; step: number; box: ReturnType<typeof bounds>; wire: string; width: number }) {
+  const h = step / Math.SQRT2;
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const segs: string[] = [];
+  const x0 = box.x0 - step;
+  const x1 = box.x1 + step;
+  // Lines x - y = c and x + y = c through the lattice nodes, 2h apart.
+  for (const dir of [1, -1]) {
+    const c0 = dir === 1 ? cx - cy : cx + cy;
+    const lo = dir === 1 ? box.x0 - box.y1 : box.x0 + box.y0;
+    const hi = dir === 1 ? box.x1 - box.y0 : box.x1 + box.y1;
+    for (let m = Math.floor((lo - c0) / (2 * h)) - 1; m <= Math.ceil((hi - c0) / (2 * h)) + 1; m++) {
+      const c = c0 + 2 * m * h;
+      const ya = dir === 1 ? x0 - c : c - x0;
+      const yb = dir === 1 ? x1 - c : c - x1;
+      segs.push(`M${x0.toFixed(1)},${ya.toFixed(1)} L${x1.toFixed(1)},${yb.toFixed(1)}`);
+    }
+  }
+  const clip = `net-${id}`;
+  return (
+    <>
+      <clipPath id={clip}>
+        <path d={`M${ring.map((p) => p.join(',')).join(' L')} Z`} />
+      </clipPath>
+      <path d={segs.join(' ')} clipPath={`url(#${clip})`} fill="none" stroke={wire} strokeWidth={width} opacity={0.85} />
+    </>
   );
 }

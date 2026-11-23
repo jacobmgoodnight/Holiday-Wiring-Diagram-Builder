@@ -43,7 +43,7 @@ describe('outline autocomplete', () => {
 
   it('suggests your presets first, then built-ins, matching word starts', () => {
     expect(suggest('    gre', all).map((p) => p.id)).toEqual(['m1']);
-    expect(suggest('  3: cord', all).map((p) => p.id)).toEqual(['m1', 'cord', 'multi']);
+    expect(suggest('  3: cord', all).map((p) => p.id)).toEqual(['m1', 'cord', 'multi', 'spt']);
     expect(suggest('  inflat', all).map((p) => p.id)).toEqual(['inflatable']);
     expect(suggest('  candy', all).map((p) => p.id)).toEqual(['pathway']);
   });

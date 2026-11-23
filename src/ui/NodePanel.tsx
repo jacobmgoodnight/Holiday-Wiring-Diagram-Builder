@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { iconFor } from '../presets/custom';
 import type { NodePatch } from '../model/actions';
+import { inlineFemales, isRun } from '../model/graph';
+import { bulbCount, drawnAsLights, runStyle } from '../photo/geometry';
+import { LightOptions, lightOptsOf, lightPatch } from '../photo/LightOptions';
 import type { DisplayNode, NodeKind, Status } from '../model/types';
 import { NODE_KINDS, STATUSES } from '../model/types';
 
@@ -61,6 +64,74 @@ function Field(props: {
   );
 }
 
+/** Where outlets usually are, one tap each (or type your own). */
+export const LOCATIONS = ['Front porch', 'Back porch', 'Left side', 'Right side', 'Garage', 'Front yard', 'Backyard', 'Inside'];
+
+/** Inline female taps and the end female of SPT-1 zip cord, C9 stringers and light strings. */
+function RunSockets({ node, onPatch }: { node: DisplayNode; onPatch: (patch: NodePatch) => void }) {
+  const taps = node.outputs === undefined ? undefined : inlineFemales(node);
+  const end = node.endFemale !== false;
+  const set = (t: number | undefined, e: boolean) => onPatch({ outputs: (t ?? 0) + (e ? 1 : 0), endFemale: e ? undefined : false });
+  const hint =
+    node.kind === 'cord' && node.subtype === 'spt'
+      ? 'Slide-on (vampire) females along the zip cord. Plug things into tap 1, tap 2… or the end.'
+      : node.kind === 'cord'
+        ? 'Outlets along the cord, then one at the end.'
+        : node.category === 'pathway'
+          ? 'Stake light sets usually have a female at the end for the next set.'
+          : node.category === 'c9'
+            ? 'C9 stringers can have females part way along; end-to-end strings have one at the end.'
+            : 'Most light strings have a female at the end to connect the next one.';
+  return (
+    <div className="field wide run-sockets">
+      <span>Females on this run</span>
+      <div className="row">
+        <div className="stepper" role="group" aria-label="Inline females">
+          <button type="button" aria-label="Fewer inline females" disabled={!taps} onClick={() => set(Math.max(0, (taps ?? 0) - 1), end)}>
+            −
+          </button>
+          <output aria-live="polite">{taps ?? '?'}</output>
+          <button type="button" aria-label="More inline females" onClick={() => set((taps ?? 0) + 1, end)}>
+            +
+          </button>
+          <span className="stepper-name">inline</span>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={end} onChange={(e) => set(taps, e.target.checked)} />
+          Female at the end
+        </label>
+      </div>
+      <span className="muted small">{hint}</span>
+    </div>
+  );
+}
+
+/** Outlet location: common spots as chips, or anything typed. */
+function LocationField({ value, onChange }: { value?: string; onChange: (v: string | undefined) => void }) {
+  return (
+    <div className="field wide location">
+      <span id="loc-label">Location</span>
+      <div className="loc-chips" role="group" aria-labelledby="loc-label">
+        {LOCATIONS.map((l) => (
+          <button key={l} type="button" className={`chip${value === l ? ' on' : ''}`} aria-pressed={value === l} onClick={() => onChange(value === l ? undefined : l)}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <input
+        key={value ?? ''}
+        aria-label="Location"
+        defaultValue={value ?? ''}
+        placeholder="Or type it: by the mailbox, garage left…"
+        onBlur={(e) => e.target.value.trim() !== (value ?? '') && onChange(e.target.value.trim() || undefined)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+      />
+    </div>
+  );
+}
+
 const numOrUndef = (v: string): number | undefined | null => {
   const t = v.trim();
   if (!t) return undefined;
@@ -79,7 +150,10 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
   };
   const str = (v: number | undefined) => (v === undefined ? '' : String(v));
   const isLoad = node.kind === 'load';
-  const hasSockets = node.kind !== 'load' && node.kind !== 'outlet';
+  const run = isRun(node);
+  const hasSockets = node.kind !== 'load' && node.kind !== 'outlet' && !run;
+  const lights = drawnAsLights(node) && runStyle(node) !== 'plain';
+  const look = lights ? lightOptsOf(node) : undefined;
 
   return (
     <section className="panel" aria-label={`Details for ${node.id}`}>
@@ -101,8 +175,10 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
         {isLoad && <Field label="Qty" type="number" value={str(node.qty)} onCommit={num('qty')} />}
         {(node.kind === 'cord' || isLoad) && <Field label="Length ft" type="number" value={str(node.lengthFt)} onCommit={num('lengthFt')} />}
         {hasSockets && <Field label="Sockets" type="number" value={str(node.outputs)} placeholder="?" onCommit={num('outputs')} />}
+        {run && <RunSockets node={node} onPatch={onPatch} />}
         {node.kind === 'outlet' && (
           <>
+            <LocationField value={node.location} onChange={(location) => onPatch({ location })} />
             <label className="field">
               <span>Breaker</span>
               <select value={str(node.breakerAmps)} onChange={(e) => onPatch({ breakerAmps: e.target.value ? Number(e.target.value) : undefined })}>
@@ -119,6 +195,18 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
         )}
       </div>
 
+      {look && (
+        <section className="lights-section" aria-label="Lights">
+          <h3>Lights</h3>
+          <LightOptions value={look} onChange={(patch) => onPatch(lightPatch(node, { ...look, ...patch }))} />
+          {node.lengthFt !== undefined && node.lengthFt > 0 && (
+            <p className="muted small">
+              ≈ {bulbCount(node.lengthFt, look.spacingIn)} bulbs over {node.lengthFt} ft at {look.spacingIn}″ spacing.
+            </p>
+          )}
+        </section>
+      )}
+
       <div className="status" role="group" aria-label="Status">
         {STATUSES.map((s: Status) => (
           <button key={s} type="button" className={node.status === s ? 'on' : ''} aria-pressed={node.status === s} onClick={() => onPatch({ status: s })}>
@@ -134,6 +222,9 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
       <details className="more">
         <summary>More details</summary>
         <div className="fields">
+          {node.kind !== 'outlet' && (
+            <Field label="Location" wide value={node.location ?? ''} placeholder="Front porch, left of garage…" onCommit={(v) => onPatch({ location: v.trim() || undefined })} />
+          )}
           <Field label="Storage spot" wide value={node.storage ?? ''} placeholder="Tote 3, garage shelf…" onCommit={(v) => onPatch({ storage: v.trim() || undefined })} />
           <Field
             label="Tags (comma separated)"

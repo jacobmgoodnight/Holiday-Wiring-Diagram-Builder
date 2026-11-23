@@ -51,7 +51,7 @@ export interface ParsedLine {
   warnings: string[];
 }
 
-const PORT_RE = /^(\d{1,2}|left|right|top|bottom|middle|tap|end|[a-d])\s*:\s*/i;
+const PORT_RE = /^(\d{1,2}|left|right|top|bottom|middle|tap\d{0,2}|end|[a-d])\s*:\s*/i;
 const ID_RE = /^([OKCSTPL])(\d{2,3})(?=$|[\s,.;:])/;
 const UNUSED_RE = /^(unused|empty socket|free socket)\b/i;
 const SIGNAL_SUFFIX_RE = /\s*\(signal\)\s*$/i;
@@ -66,6 +66,7 @@ const KIND_WORDS: Record<string, KindGuess> = {
   cord: { kind: 'cord' },
   extension: { kind: 'cord' },
   'multi-outlet': { kind: 'cord', subtype: 'multi-outlet' },
+  spt: { kind: 'cord', subtype: 'spt' },
   splitter: { kind: 'splitter' },
   strip: { kind: 'splitter', subtype: 'strip' },
   'power strip': { kind: 'splitter', subtype: 'strip' },
@@ -92,6 +93,7 @@ export const KIND_WORD: Record<NodeKind, string> = {
 export const SUBTYPE_WORD: Record<string, string> = {
   timer: 'timer',
   'multi-outlet': 'multi-outlet',
+  spt: 'spt',
   strip: 'strip',
   stake: 'stake',
   'power-supply': 'power supply',

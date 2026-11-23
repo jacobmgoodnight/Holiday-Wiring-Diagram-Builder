@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
-import { expectText, newDisplay } from './helpers';
+import { expectText, newDisplay, openDetails } from './helpers';
 
 /** Screen point for a spot on the sample house (1600 × 1000 drawing). */
 async function at(page: Page, x: number, y: number): Promise<[number, number]> {
@@ -56,12 +56,12 @@ test('draw lights, place items, measure, and plug in from the photo', async ({ p
   const inflatable = page.getByRole('button', { name: 'L02 Inflatable on photo' });
   await expect(inflatable).toBeVisible();
 
-  // Plug the inflatable into the outlet by tapping it on the photo.
-  await page.getByRole('region', { name: 'Selected L02' }).getByRole('button', { name: 'Move…' }).click();
+  // Right after placing it, the photo asks what it plugs into: tap the outlet, and its cord shows.
   await expect(page.locator('.photo-banner')).toContainText('Tap what L02 plugs into');
   await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
   await expectText(page, { contains: 'O01 Outlet\n  Inflatable\n' });
   await expect(page.locator('.wire-line')).toHaveCount(1);
+  await expect(page.locator('[data-wire="O01>L02"]')).toHaveCount(1);
 
   // Measure the 16 ft garage door; the run now shows its length and can use it.
   await page.getByRole('button', { name: /Measure/ }).click();
@@ -129,4 +129,43 @@ test('desktop: drag a marker to move it; removing the photo can be undone', asyn
   await expect(page.getByRole('button', { name: 'Try it with a sample house' })).toBeVisible();
   await page.locator('.toast').getByRole('button', { name: 'Undo' }).click();
   await expect(marker).toBeVisible();
+});
+
+test('plug in on the photo draws the cable; lights take colours and spacing; bushes get lit', async ({ page, isMobile }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: /Place from plan/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /O01/ }).click();
+  await tap(page, 580, 700);
+
+  // "+ Plug in" on the outlet: pick C9s, draw them, and the cable runs from the outlet.
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add C9 roofline run', exact: true }).first().click();
+  await expect(page.locator('.photo-banner')).toContainText('plugs into O01');
+  for (const [x, y] of [[260, 430], [650, 190], [1040, 430]] as const) await tap(page, x, y);
+  if (isMobile) await page.getByRole('button', { name: /Style/ }).click();
+  await expect(page.getByLabel('Bulb spacing')).toHaveValue('12'); // C9s: a foot apart by default
+  await page.getByLabel('Bulb colors').selectOption('multi');
+  await page.getByLabel('Bulb spacing').selectOption('8');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('[data-wire="O01>L01"]')).toHaveCount(1);
+  await expectText(page, { contains: 'O01 Outlet\n  C9 roofline run\n' });
+  const details = await openDetails(page, 'L01');
+  await expect(details.getByLabel('Bulb colors')).toHaveValue('multi');
+  await expect(details.getByLabel('Bulb spacing')).toHaveValue('8');
+  await details.getByLabel('Wire color').selectOption('white');
+  await expect(details.getByLabel('Wire color')).toHaveValue('white');
+  if (isMobile) await page.keyboard.press('Escape');
+
+  // Light a bush with net lights, then plug it in by tapping the outlet when asked.
+  await tap(page, 1500, 120); // empty sky: nothing selected
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Light a bush with Net lights (bush)' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('Tap around the bush');
+  for (const [x, y] of [[320, 725], [380, 690], [440, 725], [380, 760]] as const) await tap(page, x, y);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: 'L02 Net lights on a bush' })).toBeVisible();
+  await expect(page.locator('.photo-banner')).toContainText('Tap what L02 plugs into');
+  await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
+  await expect(page.locator('[data-wire="O01>L02"]')).toHaveCount(1);
+  await expectText(page, { contains: 'O01 Outlet\n  C9 roofline run\n  Net lights\n' });
 });

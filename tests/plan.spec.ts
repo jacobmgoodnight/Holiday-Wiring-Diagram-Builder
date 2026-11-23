@@ -149,3 +149,35 @@ test.describe('phone', () => {
     await expect(node(page, 'L01')).toHaveCount(1);
   });
 });
+
+test('outlet location, and SPT-1 zip cord with inline females', async ({ page, isMobile }) => {
+  await page.goto('./');
+  await newDisplay(page);
+  await node(page, 'O01').click();
+  let details = await openDetails(page, 'O01');
+  await details.getByRole('button', { name: 'Front porch' }).click();
+  await expect(page.locator('.cluster-title', { hasText: 'O01 Outlet · Front porch' })).toBeVisible(); // the outlet's group says where it is
+  if (isMobile) await page.keyboard.press('Escape');
+
+  // SPT-1 zip cord comes with two inline females and one at the end.
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await pick(page, 'SPT-1 zip cord').click();
+  const females = page.locator('.react-flow__node[aria-label^="Open female"]');
+  await expect(females).toHaveCount(3);
+  await expect(node(page, 'Open female tap 2 on C01')).toHaveCount(1);
+  await expect(node(page, 'Open female end on C01')).toHaveCount(1);
+
+  details = await openDetails(page, 'C01');
+  await details.getByRole('button', { name: 'More inline females' }).click();
+  await expect(females).toHaveCount(4);
+  await details.getByRole('checkbox', { name: 'Female at the end' }).uncheck();
+  await expect(females).toHaveCount(3);
+  await expect(node(page, 'Open female end on C01')).toHaveCount(0);
+  await expect(node(page, 'Open female tap 3 on C01')).toHaveCount(1);
+  if (isMobile) await page.keyboard.press('Escape');
+
+  // Fill an inline female directly.
+  await node(page, 'Open female tap 2 on C01').click();
+  await pick(page, 'Wreath').click();
+  await expectText(page, { contains: '  C01 SPT-1 zip cord\n    tap2: Wreath\n' });
+});

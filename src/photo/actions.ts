@@ -1,5 +1,5 @@
 /** Photo view actions (pure). Placing items never changes their wiring. */
-import { type ActionResult, ActionError, type NewItem, addNode } from '../model/actions';
+import { type ActionResult, ActionError, type NewItem, type Target, addNode } from '../model/actions';
 import type { Display, Placement, PhotoView } from '../model/types';
 
 const clone = (d: Display): Display => structuredClone(d);
@@ -35,14 +35,16 @@ export function updateView(display: Display, viewId: string, patch: Partial<Pick
 
 function valid(p: Placement): boolean {
   const ok = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1;
-  return p.kind === 'point' ? ok(p.x) && ok(p.y) : p.points.length >= 2 && p.points.every(([x, y]) => ok(x) && ok(y));
+  if (p.kind === 'point') return ok(p.x) && ok(p.y);
+  return p.points.length >= (p.kind === 'area' ? 3 : 2) && p.points.every(([x, y]) => ok(x) && ok(y));
 }
 
 /** Put an item on a photo (or take it off with null). */
 export function setPlacement(display: Display, nodeId: string, viewId: string, placement: Placement | null): ActionResult {
   if (!display.nodes[nodeId]) throw new ActionError(`No item ${nodeId}`);
   if (!display.views?.some((v) => v.id === viewId)) throw new ActionError('That photo is no longer here');
-  if (placement && !valid(placement)) throw new ActionError('A light run needs at least two points on the photo');
+  if (placement && !valid(placement))
+    throw new ActionError(placement.kind === 'area' ? 'Outline the bush with at least three points' : 'A light run needs at least two points on the photo');
   const d = clone(display);
   const n = d.nodes[nodeId];
   if (placement) n.placements = { ...(n.placements ?? {}), [viewId]: placement };
@@ -55,10 +57,10 @@ export function setPlacement(display: Display, nodeId: string, viewId: string, p
 
 /**
  * Add a new item straight onto the photo. It starts "not plugged in yet" (wiring is never
- * guessed) unless a parent is given.
+ * guessed) unless a target is given ("+ Plug in" on the photo).
  */
-export function addPlacedNode(display: Display, item: NewItem, viewId: string, placement: Placement, parent: string | null = null): ActionResult {
-  const added = addNode(display, item, { parent });
+export function addPlacedNode(display: Display, item: NewItem, viewId: string, placement: Placement, target: Target = { parent: null }): ActionResult {
+  const added = addNode(display, item, target);
   const placed = setPlacement(added.display, added.nodeId!, viewId, placement);
   return { ...placed, warning: added.warning };
 }

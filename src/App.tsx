@@ -21,7 +21,7 @@ import {
   updateNode,
 } from './model/actions';
 import { type ChecklistMode, type ChecklistRow, checklist } from './model/checklist';
-import { displayStats } from './model/graph';
+import { displayStats, isRun } from './model/graph';
 import { type Direction, navigate, parentOf } from './model/navigate';
 import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
@@ -64,9 +64,10 @@ import { SelectionBar } from './ui/SelectionBar';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
 import { addPlacedNode, addView, removeView, setPlacement, updateView } from './photo/actions';
-import { type Pt, runLengthFt } from './photo/geometry';
+import { type Pt, drawnAsLights, drawsAsArea, runLengthFt } from './photo/geometry';
+import { type LightOpts, lightPatch } from './photo/LightOptions';
 import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
-import type { PhotoIntent } from './photo/PhotoEditor';
+import type { LightNode, PhotoIntent } from './photo/PhotoEditor';
 import { PhotoPane } from './photo/PhotoPane';
 import { Palette } from './ui/Palette';
 import { PresetPicker } from './ui/PresetPicker';
@@ -74,8 +75,6 @@ import { Sheet } from './ui/Sheet';
 import { ThemeButton } from './ui/ThemeButton';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
-/** Load categories drawn as light runs on the photo (others are placed as markers). */
-const LIGHT_RUNS = new Set(['c9', 'mini', 'icicle', 'pixel', 'pathway', 'tree']);
 const OVERALL = '__overall__';
 /** Automatic restore points: at most one per display per this interval while editing. */
 const AUTO_SNAPSHOT_MS = 10 * 60 * 1000;
@@ -782,24 +781,27 @@ export function App() {
 
   const isNewHere = (d: Display) => (d.copiedFrom ? true : undefined);
 
+  /** What a photo intent puts on the photo: a light item is drawn, anything else placed. */
+  const photoIntentFor = (p: Preset, target?: Target): PhotoIntent =>
+    drawnAsLights(p) ? { type: 'draw', presetId: p.id, name: p.name, target, area: drawsAsArea(p) } : { type: 'place', presetId: p.id, name: p.name, target };
+
+  /**
+   * After a new item lands on the photo: select it, and if it is not plugged in yet and there
+   * is something placed it could plug into, ask for that right away so its cable shows.
+   */
+  const afterPlaced = (r: ActionResult, next: Doc) => {
+    setSelected(r.nodeId);
+    const d = next.result.display;
+    const n = r.nodeId ? d.nodes[r.nodeId] : undefined;
+    if (!n || !photoView || n.kind === 'outlet' || homeLink(d, n.id)) return;
+    const others = Object.values(d.nodes).some((o) => o.id !== n.id && o.placements?.[photoView.id] && (o.kind !== 'load' || isRun(o)));
+    if (others) setIntent({ type: 'move', nodeId: n.id, fresh: true });
+  };
+
   const placePoint = (it: PhotoIntent, at: Pt) => {
     if (!photoView || it.type !== 'place') return;
     setIntent(undefined);
-    if (it.nodeId) {
-      const id = it.nodeId;
-      act((d) => setPlacement(d, id, photoView.id, { kind: 'point', x: at[0], y: at[1] }), () => setSelected(id));
-    } else if (it.presetId) {
-      const p = presetById(it.presetId, custom);
-      if (!p) return;
-      noteUsed(p.id);
-      act((d) => addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, { kind: 'point', x: at[0], y: at[1] }), (r) => setSelected(r.nodeId));
-    }
-  };
-
-  const finishRun = (it: PhotoIntent, points: Pt[]) => {
-    if (!photoView || it.type !== 'draw') return;
-    setIntent(undefined);
-    const placement = { kind: 'path' as const, points };
+    const placement = { kind: 'point' as const, x: at[0], y: at[1] };
     if (it.nodeId) {
       const id = it.nodeId;
       act((d) => setPlacement(d, id, photoView.id, placement), () => setSelected(id));
@@ -807,8 +809,35 @@ export function App() {
       const p = presetById(it.presetId, custom);
       if (!p) return;
       noteUsed(p.id);
-      act((d) => addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, placement), (r) => setSelected(r.nodeId));
+      act((d) => addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, placement, it.target), afterPlaced);
     }
+  };
+
+  const finishRun = (it: PhotoIntent, points: Pt[], opts?: LightOpts) => {
+    if (!photoView || it.type !== 'draw') return;
+    setIntent(undefined);
+    const placement = it.area ? { kind: 'area' as const, points } : { kind: 'path' as const, points };
+    if (it.nodeId) {
+      const id = it.nodeId;
+      act((d) => {
+        const placed = setPlacement(d, id, photoView.id, placement);
+        return opts ? updateNode(placed.display, id, lightPatch(d.nodes[id], opts)) : placed;
+      }, () => setSelected(id));
+    } else if (it.presetId) {
+      const p = presetById(it.presetId, custom);
+      if (!p) return;
+      noteUsed(p.id);
+      const look = opts ? lightPatch(p, opts) : {};
+      act((d) => addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement, it.target), afterPlaced);
+    }
+  };
+
+  /** "Add without placing": the new item goes into the plan only. */
+  const skipPlacing = (it: PhotoIntent) => {
+    if ((it.type !== 'place' && it.type !== 'draw') || !it.presetId) return;
+    const p = presetById(it.presetId, custom);
+    setIntent(undefined);
+    if (p) addPreset(p, it.target ?? { parent: null });
   };
 
   const exportBackupPhotos = async () => {
@@ -832,6 +861,13 @@ export function App() {
   if (!doc || !layout || !display || !hist) return <div className="loading">Loading…</div>;
 
   const title = display.title;
+  // The item or preset being drawn on the photo, for its live preview and light options.
+  const draftBase: LightNode | undefined = (() => {
+    if (!intent || intent.type !== 'draw') return undefined;
+    if (intent.nodeId) return display.nodes[intent.nodeId];
+    const p = intent.presetId ? presetById(intent.presetId, custom) : undefined;
+    return p ? { ...p, id: 'new' } : undefined;
+  })();
   // Exports show everything, folded branches included.
   const fullLayout = () => layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView });
   const exportSvg = () => downloadSvg(layoutToSvg(fullLayout(), title), title);
@@ -881,10 +917,11 @@ export function App() {
         mode === 'photo' && photoView ? (
           <PhotoNodeActions
             placement={selNode.placements?.[photoView.id]}
-            lengthFt={selNode.placements?.[photoView.id] ? runLengthFt(selNode.placements[photoView.id], photoView) : undefined}
-            isLight={selNode.kind === 'load' && LIGHT_RUNS.has(selNode.category ?? '')}
+            lengthFt={selNode.placements?.[photoView.id] ? runLengthFt(selNode.placements[photoView.id], photoView, selNode.smooth) : undefined}
+            isLight={drawnAsLights(selNode)}
             onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
-            onDraw={() => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
+            onDraw={(area) => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}`, area })}
+            defaultArea={drawsAsArea(selNode)}
             onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
             onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
           />
@@ -1073,6 +1110,8 @@ export function App() {
               onAddItem={() => setPhotoPicker(true)}
               onPlacePoint={placePoint}
               onFinishRun={finishRun}
+              onSkipPlacing={skipPlacing}
+              draftBase={draftBase}
               onSetScale={(fpp) => {
                 if (!photoView) return;
                 setIntent(undefined);
@@ -1232,8 +1271,8 @@ export function App() {
           onClose={() => setPhotoPicker(false)}
           onPick={(p) => {
             setPhotoPicker(false);
-            // Lights are drawn along the house; everything else is placed with a tap.
-            setIntent(p.kind === 'load' && LIGHT_RUNS.has(p.category ?? '') ? { type: 'draw', presetId: p.id, name: p.name } : { type: 'place', presetId: p.id, name: p.name });
+            // Lights are drawn along the house (or around a bush); everything else is placed with a tap.
+            setIntent(photoIntentFor(p));
           }}
         />
       )}
@@ -1247,7 +1286,9 @@ export function App() {
           onPick={(p) => {
             const t = picker;
             setPicker(null);
-            addPreset(p, t);
+            // On the photo, plugging something in puts it on the photo too, cable and all.
+            if (mode === 'photo' && photoView) setIntent(photoIntentFor(p, t));
+            else addPreset(p, t);
           }}
         />
       )}
@@ -1307,19 +1348,27 @@ function PhotoNodeActions(props: {
   placement?: Placement;
   lengthFt?: number;
   isLight: boolean;
+  /** Lights that are outlined as a bush (net lights, wraps) rather than drawn as a run. */
+  defaultArea: boolean;
   onPlace: () => void;
-  onDraw: () => void;
+  onDraw: (area: boolean) => void;
   onRemove: () => void;
   onUseLength: (ft: number) => void;
 }) {
-  const { placement, lengthFt, isLight } = props;
+  const { placement, lengthFt, isLight, defaultArea } = props;
   const ft = lengthFt !== undefined ? Math.round(lengthFt) : undefined;
+  const area = placement && placement.kind !== 'point' ? placement.kind === 'area' : defaultArea;
   return (
     <>
       {isLight ? (
-        <button type="button" className="primary" onClick={props.onDraw}>
-          ✏️ {placement?.kind === 'path' ? 'Redraw on photo' : 'Draw on photo'}
-        </button>
+        <>
+          <button type="button" className="primary" onClick={() => props.onDraw(area)}>
+            {area ? '🌳' : '✏️'} {placement && placement.kind !== 'point' ? 'Redraw on photo' : area ? 'Outline on photo' : 'Draw on photo'}
+          </button>
+          <button type="button" onClick={() => props.onDraw(!area)}>
+            {area ? '✏️ Draw as a run' : '🌳 Light a bush'}
+          </button>
+        </>
       ) : (
         <button type="button" className={placement ? '' : 'primary'} onClick={props.onPlace}>
           📍 {placement ? 'Move on photo' : 'Place on photo'}

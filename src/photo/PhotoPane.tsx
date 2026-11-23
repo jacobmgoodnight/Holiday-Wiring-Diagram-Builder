@@ -3,12 +3,13 @@ import type { Display, Placement, PhotoView } from '../model/types';
 import { iconFor } from '../presets/custom';
 import { PRESETS } from '../presets/presets';
 import { Sheet } from '../ui/Sheet';
-import { type Pt, unplaced } from './geometry';
-import { PhotoEditor, type PhotoIntent } from './PhotoEditor';
+import { type Pt, drawnAsLights, drawsAsArea, unplaced } from './geometry';
+import type { LightOpts } from './LightOptions';
+import { type LightNode, PhotoEditor, type PhotoIntent } from './PhotoEditor';
 
-/** Light styles offered by "Draw lights" (built-in presets). */
-const RUN_PRESETS = ['c9', 'mini', 'icicle', 'pixel', 'pathway', 'tree'];
-const LIGHT_CATEGORIES = new Set(['c9', 'mini', 'icicle', 'pixel', 'pathway', 'tree', 'wreath']);
+/** Light styles offered by "Draw lights" (built-in presets): along the house, and on bushes. */
+const RUN_PRESETS = ['c9', 'c9stringer', 'mini', 'icicle', 'pathway'];
+const AREA_PRESETS = ['net', 'bushmini', 'tree'];
 
 interface Props {
   display: Display;
@@ -27,7 +28,10 @@ interface Props {
   /** Open the icon picker; the chosen preset is then placed with a tap. */
   onAddItem: () => void;
   onPlacePoint: (intent: PhotoIntent, at: Pt) => void;
-  onFinishRun: (intent: PhotoIntent, points: Pt[]) => void;
+  onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts) => void;
+  onSkipPlacing: (intent: PhotoIntent) => void;
+  /** The item or preset being drawn, for the live preview and its light options. */
+  draftBase?: LightNode;
   onSetScale: (feetPerPx: number) => void;
   onMovePlacement: (nodeId: string, placement: Placement) => void;
   onPlugInto: (nodeId: string, parentId: string) => void;
@@ -128,9 +132,11 @@ export function PhotoPane(props: Props) {
         selectedId={props.selectedId}
         onSelect={props.onSelect}
         intent={props.intent}
+        draftBase={props.draftBase}
         onCancelIntent={() => props.setIntent(undefined)}
         onPlacePoint={props.onPlacePoint}
         onFinishRun={props.onFinishRun}
+        onSkipPlacing={props.onSkipPlacing}
         onSetScale={props.onSetScale}
         onMovePlacement={props.onMovePlacement}
         onPlugInto={props.onPlugInto}
@@ -156,39 +162,49 @@ export function PhotoPane(props: Props) {
 
       {sheet === 'draw' && (
         <Sheet title="Draw lights" onClose={() => setSheet(null)}>
-          <p className="muted small">Pick a style, then tap along the house. Bulb colours come from the name (warm white, red, multicolor…).</p>
-          {selected && selected.kind === 'load' && LIGHT_CATEGORIES.has(selected.category ?? '') && (
+          <p className="muted small">Pick a style, then tap along the house (or around a bush). Set colours, spacing and wire while you draw.</p>
+          {selected && drawnAsLights(selected) && (
             <button
               type="button"
               className="primary wide-btn"
               onClick={() => {
                 setSheet(null);
-                props.setIntent({ type: 'draw', nodeId: selected.id, name: `${selected.id} ${selected.label}` });
+                const cur = selected.placements?.[view.id];
+                const area = cur ? cur.kind === 'area' : drawsAsArea(selected);
+                props.setIntent({ type: 'draw', nodeId: selected.id, name: `${selected.id} ${selected.label}`, area });
               }}
             >
-              {selected.placements?.[view.id]?.kind === 'path' ? 'Redraw' : 'Draw'} {selected.id} {selected.label}
+              {selected.placements?.[view.id] && selected.placements[view.id].kind !== 'point' ? 'Redraw' : 'Draw'} {selected.id} {selected.label}
             </button>
           )}
-          <div className="tiles">
-            {RUN_PRESETS.map((id) => PRESETS.find((p) => p.id === id)!).map((p) => (
-              <div className="tile" key={p.id}>
-                <button
-                  type="button"
-                  className="tile-main"
-                  aria-label={`Draw ${p.name}`}
-                  onClick={() => {
-                    setSheet(null);
-                    props.setIntent({ type: 'draw', presetId: p.id, name: p.name });
-                  }}
-                >
-                  <span className="tile-icon" aria-hidden="true">
-                    {p.icon}
-                  </span>
-                  <span className="tile-name">{p.name}</span>
-                </button>
+          {[
+            { title: 'Along the house', ids: RUN_PRESETS, area: false },
+            { title: 'On bushes and trees', ids: AREA_PRESETS, area: true },
+          ].map((g) => (
+            <section key={g.title} className="draw-group">
+              <h3>{g.title}</h3>
+              <div className="tiles">
+                {g.ids.map((id) => PRESETS.find((p) => p.id === id)!).map((p) => (
+                  <div className="tile" key={p.id}>
+                    <button
+                      type="button"
+                      className="tile-main"
+                      aria-label={g.area ? `Light a bush with ${p.name}` : `Draw ${p.name}`}
+                      onClick={() => {
+                        setSheet(null);
+                        props.setIntent({ type: 'draw', presetId: p.id, name: p.name, area: g.area });
+                      }}
+                    >
+                      <span className="tile-icon" aria-hidden="true">
+                        {p.icon}
+                      </span>
+                      <span className="tile-name">{p.name}</span>
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </section>
+          ))}
         </Sheet>
       )}
 
@@ -202,12 +218,15 @@ export function PhotoPane(props: Props) {
                   type="button"
                   onClick={() => {
                     setSheet(null);
-                    const light = n.kind === 'load' && LIGHT_CATEGORIES.has(n.category ?? '');
-                    props.setIntent(light ? { type: 'draw', nodeId: n.id, name: `${n.id} ${n.label}` } : { type: 'place', nodeId: n.id, name: `${n.id} ${n.label}` });
+                    props.setIntent(
+                      drawnAsLights(n)
+                        ? { type: 'draw', nodeId: n.id, name: `${n.id} ${n.label}`, area: drawsAsArea(n) }
+                        : { type: 'place', nodeId: n.id, name: `${n.id} ${n.label}` },
+                    );
                   }}
                 >
                   <span aria-hidden="true">{iconFor(n)}</span> <b className="dn-id">{n.id}</b> {n.label}
-                  <span className="muted small"> {n.kind === 'load' && LIGHT_CATEGORIES.has(n.category ?? '') ? '· draw' : '· tap to place'}</span>
+                  <span className="muted small"> {drawnAsLights(n) ? (drawsAsArea(n) ? '· outline' : '· draw') : '· tap to place'}</span>
                 </button>
               </li>
             ))}

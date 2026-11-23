@@ -119,6 +119,19 @@ export interface DisplayNode {
   scheduleGroup?: string;
   /** Teardown: packed away this season (model-only). */
   packed?: boolean;
+  /**
+   * Runs (SPT-1 zip cord, light strings) with a known socket count: the last socket is a
+   * female at the end of the run (default true); the others are inline female taps.
+   */
+  endFemale?: boolean;
+  /** Light runs: bulb colours, repeating along the run (CSS colours). */
+  bulbColors?: string[];
+  /** Light runs: bulb spacing in inches (default 12). */
+  spacingIn?: number;
+  /** Light runs on the photo: a smooth curve through the points (ground stakes, garland). */
+  smooth?: boolean;
+  /** Light runs: wire colour (green, white, black, brown). */
+  wireColor?: string;
   /** Where this item sits on each photo view (model-only; survives text edits). */
   placements?: Record<string, Placement>;
   /** Raw outline line content (after indentation) that created this node. */
@@ -200,7 +213,9 @@ export interface PhotoView {
 export type Placement =
   | { kind: 'point'; x: number; y: number }
   /** A light run drawn along the house: at least two points. */
-  | { kind: 'path'; points: [number, number][] };
+  | { kind: 'path'; points: [number, number][] }
+  /** Lights covering an area (a bush or tree): a closed outline of at least three points. */
+  | { kind: 'area'; points: [number, number][] };
 
 export type Severity = 'error' | 'warning' | 'info';
 

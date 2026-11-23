@@ -2,7 +2,7 @@
  * Graph actions used by the diagram (tap/drag) editor. Pure: each returns a new Display.
  * Connections only change through these explicit actions; layout never changes them.
  */
-import { powerChildren, socketLabels } from './graph';
+import { isRun, powerChildren, socketLabels } from './graph';
 import type { Display, DisplayNode, Link, LoadCategory, NodeKind } from './types';
 import { ID_PREFIX } from './types';
 
@@ -33,6 +33,11 @@ export interface NewItem {
   watts?: number;
   wattsApprox?: boolean;
   isNew?: boolean;
+  endFemale?: boolean;
+  bulbColors?: string[];
+  spacingIn?: number;
+  smooth?: boolean;
+  wireColor?: string;
 }
 
 const clone = (d: Display): Display => structuredClone(d);
@@ -113,7 +118,9 @@ function attach(d: Display, childId: string, target: Target): string | undefined
     const outputs = d.nodes[parent].outputs;
     const used = kids.filter((l) => l.to).length;
     if (outputs !== undefined && used >= outputs) {
-      warning = `${parent} has no free socket (${used} of ${outputs} used); this makes socket ${used + 1}. Check it, or change its socket count.`;
+      warning = isRun(d.nodes[parent])
+        ? `${parent} has no open female (${used} of ${outputs} used); this adds another tap. Add inline females in its details if that is right.`
+        : `${parent} has no free socket (${used} of ${outputs} used); this makes socket ${used + 1}. Check it, or change its socket count.`;
     }
   } else {
     const labels = socketLabels(d, parent);
@@ -172,6 +179,11 @@ export function addNode(display: Display, item: NewItem, target: Target): Action
     isNew: item.isNew,
     lengthFt: item.lengthFt,
     color: item.color,
+    endFemale: item.endFemale,
+    bulbColors: item.bulbColors ? [...item.bulbColors] : undefined,
+    spacingIn: item.spacingIn,
+    smooth: item.smooth,
+    wireColor: item.wireColor,
   });
   const warning = attach(d, id, target);
   return { display: d, nodeId: id, warning };
@@ -293,6 +305,11 @@ export function duplicateNode(display: Display, id: string): ActionResult {
       // Copy exactly: an entered number stays entered (addNode would mark it an estimate).
       wattsApprox: n.watts !== undefined ? !!n.wattsApprox : undefined,
       isNew: n.isNew,
+      endFemale: n.endFemale,
+      bulbColors: n.bulbColors,
+      spacingIn: n.spacingIn,
+      smooth: n.smooth,
+      wireColor: n.wireColor,
     },
     target,
   );

@@ -325,3 +325,46 @@ Decisions:
 
 Bugs fixed along the way: dialogs (Edit as text, Copy for next year) stole focus back on
 every keystroke; the details panel covered photo markers; the minimap covered items.
+
+## Christmas lights round
+
+You asked for a plan tailored to Christmas lights: SPT-1 with inline females and C9 roofline
+females, outlet locations, a visible cord when plugging in on the photo, light colour and
+spacing (12″ default), a realistic look, rounded corners for ground stakes, and lights on
+bushes.
+
+* **Runs with inline females.** A cord of subtype `spt` (SPT-1/2/3, zip cord) or
+  `multi-outlet`, and light strings (C9, minis, icicles, ground stakes), are "runs". With a
+  known socket count their sockets are `tap1`…`tapN` plus `end`; `endFemale: false` drops the
+  end one. The details show a "Females on this run" stepper and a "Female at the end" box.
+  Empty sockets on runs show as "Open female". New presets: SPT-1 zip cord (2 inline + end),
+  C9 stringer, Net lights (bush), Bush wrap (minis); C9s, minis, icicles and ground stakes
+  now come with an end female.
+* **Outlet location** (model-only): chips for Front porch, Back porch, Left side, Right side,
+  Garage, Front yard, Backyard, Inside, or typed. It shows on the outlet's diagram box, in its
+  group title and in the CSV (`location` column). Other items have it under More details.
+* **Photo cables.** Each placed item gets a sagging cable to the nearest placed item
+  upstream, coloured like the cord in between (that cord's ID is shown on it), or the item's
+  own lead. On a light run it attaches at the end for `end`, otherwise at the nearest point.
+  "+ Plug in" on the photo places (or draws) the new item and plugs it in; "+ Add item" asks
+  what it plugs into straight after placing ("Later" skips).
+* **Light look.** Bulb colours (palettes or any colour), spacing in inches, wire colour and
+  Smooth curves are set while drawing (live preview) and in the details. Only choices that
+  differ from the item's defaults are stored, so naming a string "red" still makes it red.
+  Bulbs are drawn as C9/C7 glass in sockets, minis, ground stakes, icicle drops or pixels;
+  real size and spacing once the photo has a scale, never too small to see; at night they get
+  a lit gradient, a halo and a soft wash.
+* **Rounded corners** cut inside each corner (up to halfway along the neighbouring segments),
+  so a few taps make one smooth curve and nothing bulges outside what you drew.
+* **Bushes**: a new `area` placement (closed outline, 3+ points, always rounded). Net lights
+  draw a diamond mesh clipped to the bush; other lights are wrapped through it.
+
+Decisions:
+
+* **D31. Inline females are socket names, not separate items.** A vampire plug on SPT-1 is
+  part of the run; what plugs into it is a child on `tapN`. Taps are not placed on the photo
+  individually; the cable attaches at the nearest point of the run.
+* **D32. Unknown socket counts stay unknown.** Existing C9/multi-outlet items without a count
+  keep their old behaviour; nothing is guessed for them.
+* **D33. Wire colour and light options are model-only** (like notes and placements) and
+  survive text edits.

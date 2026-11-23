@@ -25,7 +25,9 @@ export function inferPowerKind(text: string): KindGuess | undefined {
   if (has(t, /\b(power strip|surge)\b/)) return { kind: 'splitter', subtype: 'strip' };
   if (has(t, /\bstrip\b/) && !has(t, /\b(led|lights?|pixels?|rgb)\b/)) return { kind: 'splitter', subtype: 'strip' };
   if (has(t, /\b(splitter|\d+-way|cube tap)\b/)) return { kind: 'splitter' };
-  if (has(t, /\b(cord|spt-?[123]|feeder|zip ?cord|lead)\b/)) return { kind: 'cord' };
+  // SPT-1/SPT-2 zip cord with inline female taps is a run.
+  if (has(t, /\b(spt-?[123]|zip ?cord)\b/)) return { kind: 'cord', subtype: 'spt' };
+  if (has(t, /\b(cord|feeder|lead)\b/)) return { kind: 'cord' };
   if (has(t, /(^|[^-])\b(outlet|receptacle)\b/)) return { kind: 'outlet' };
   return undefined;
 }

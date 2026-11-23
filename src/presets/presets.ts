@@ -21,6 +21,13 @@ export interface Preset {
   keywords?: string;
   /** Saved by you with "Save as preset" (stored in this browser). */
   custom?: boolean;
+  /** Runs: whether the last socket is a female at the end (default yes). */
+  endFemale?: boolean;
+  /** Light runs: bulb colours, spacing (inches), smooth curve on the photo, wire colour. */
+  bulbColors?: string[];
+  spacingIn?: number;
+  smooth?: boolean;
+  wireColor?: string;
 }
 
 export const PRESETS: Preset[] = [
@@ -30,6 +37,7 @@ export const PRESETS: Preset[] = [
   { id: 'timer', name: 'Timer', icon: '⏲️', group: 'power', kind: 'smartplug', subtype: 'timer', label: 'Timer', outputs: 1, keywords: 'photocell dusk' },
   { id: 'cord', name: 'Extension cord', icon: '➰', group: 'power', kind: 'cord', label: 'Extension cord', outputs: 1, keywords: 'lead spt' },
   { id: 'multi', name: 'Multi-outlet extension', icon: '〰️', group: 'power', kind: 'cord', subtype: 'multi-outlet', label: 'Multi-outlet extension', keywords: 'tap cord' },
+  { id: 'spt', name: 'SPT-1 zip cord', icon: '➿', group: 'power', kind: 'cord', subtype: 'spt', label: 'SPT-1 zip cord', outputs: 3, color: 'green', keywords: 'spt1 spt-2 zip plug vampire inline female tap wire' },
   { id: 'split3', name: '3-way splitter', icon: '🔱', group: 'power', kind: 'splitter', label: '3-way splitter', outputs: 3, keywords: 'cube tap adapter' },
   { id: 'split4', name: '4-way splitter', icon: '🔱', group: 'power', kind: 'splitter', label: '4-way splitter', outputs: 4 },
   { id: 'strip', name: 'Power strip', icon: '🎚️', group: 'power', kind: 'splitter', subtype: 'strip', label: '6-outlet power strip', outputs: 6, keywords: 'surge' },
@@ -38,13 +46,16 @@ export const PRESETS: Preset[] = [
   { id: 'controller', name: 'Controller', icon: '🎛️', group: 'power', kind: 'controller', label: 'WLED controller', keywords: 'esp32 wled falcon' },
   { id: 'tote', name: 'Tote', icon: '📦', group: 'power', kind: 'enclosure', label: 'Tote', keywords: 'enclosure box bin' },
 
-  { id: 'c9', name: 'C9 roofline run', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 roofline run', keywords: 'c7 bulbs eaves gutter' },
-  { id: 'mini', name: 'Mini-light string', icon: '✨', group: 'load', kind: 'load', category: 'mini', label: 'Mini lights', keywords: 'string fairy' },
-  { id: 'icicle', name: 'Icicle / net lights', icon: '🧊', group: 'load', kind: 'load', category: 'icicle', label: 'Icicle lights', keywords: 'net bush' },
+  { id: 'c9', name: 'C9 roofline run', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 roofline run', outputs: 1, spacingIn: 12, keywords: 'c7 bulbs eaves gutter stringer' },
+  { id: 'c9stringer', name: 'C9 stringer (SPT-1 + sockets)', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 stringer', outputs: 1, spacingIn: 12, keywords: 'spt-1 spt1 sockets commercial build your own roofline inline female' },
+  { id: 'mini', name: 'Mini-light string', icon: '✨', group: 'load', kind: 'load', category: 'mini', label: 'Mini lights', outputs: 1, spacingIn: 4, keywords: 'string fairy end to end' },
+  { id: 'icicle', name: 'Icicle lights', icon: '🧊', group: 'load', kind: 'load', category: 'icicle', label: 'Icicle lights', outputs: 1, spacingIn: 4, keywords: 'drops eaves' },
+  { id: 'net', name: 'Net lights (bush)', icon: '🌳', group: 'load', kind: 'load', category: 'icicle', label: 'Net lights', outputs: 1, spacingIn: 4, keywords: 'bush shrub hedge net' },
+  { id: 'bushmini', name: 'Bush wrap (minis)', icon: '🌿', group: 'load', kind: 'load', category: 'mini', label: 'Bush mini lights', outputs: 1, spacingIn: 4, keywords: 'bush shrub hedge wrap twinkle' },
   { id: 'pixel', name: 'Pixel tree', icon: '🌈', group: 'load', kind: 'load', category: 'pixel', label: 'Pixel tree', keywords: 'wled rgb mega tree' },
   { id: 'tree', name: 'Lit tree', icon: '🎄', group: 'load', kind: 'load', category: 'tree', label: 'Tree lights', keywords: 'christmas tree' },
   { id: 'wreath', name: 'Wreath', icon: '🎀', group: 'load', kind: 'load', category: 'wreath', label: 'Wreath', keywords: 'garland' },
-  { id: 'pathway', name: 'Pathway lights', icon: '🍬', group: 'load', kind: 'load', category: 'pathway', label: 'Pathway lights', keywords: 'candy cane walkway stake' },
+  { id: 'pathway', name: 'Ground stake lights', icon: '🍬', group: 'load', kind: 'load', category: 'pathway', label: 'Pathway lights', outputs: 1, spacingIn: 12, smooth: true, keywords: 'candy cane walkway stake ground c9 c7 driveway' },
   { id: 'yardart', name: 'Light-up yard art', icon: '🦌', group: 'load', kind: 'load', category: 'yard-art', label: 'Light-up yard art', keywords: 'reindeer silhouette' },
   { id: 'inflatable', name: 'Inflatable', icon: '⛄', group: 'load', kind: 'load', category: 'inflatable', label: 'Inflatable', keywords: 'blow up snowman' },
   { id: 'prop', name: 'Animated prop', icon: '🎃', group: 'load', kind: 'load', category: 'prop', label: 'Animated prop', keywords: 'skelly animatronic scarecrow' },
