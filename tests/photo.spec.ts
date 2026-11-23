@@ -329,6 +329,8 @@ test('a new photo walks you through measure, outlet, lights and plug in; looks a
   // Swap the plug and the end of L01; undo puts it back.
   await tap(page, 455, 310);
   const plug = page.getByRole('img', { name: 'Plug end of L01' });
+  await expect(plug).toBeVisible();
+  await settled(page); // selecting re-fits the photo on a phone (the bottom bar changes)
   const before = (await plug.boundingBox())!;
   await page.getByRole('region', { name: 'Selected L01' }).getByRole('button', { name: '⇄ Swap plug and end' }).click();
   const photoH = (await page.locator('.photo-stage img').boundingBox())!.height;
