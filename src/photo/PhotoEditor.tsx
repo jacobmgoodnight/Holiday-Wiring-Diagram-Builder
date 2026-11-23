@@ -290,7 +290,7 @@ export function PhotoEditor(props: Props) {
         setSegs([1]);
       } else {
         // Snap the tap onto an edge, and follow the edge from the last point.
-        const q = map ? snapPoint(map, p, 10 * u) : p;
+        const q = map ? snapPoint(map, p, 16 * u) : p;
         const pts = map && draft.length ? traceEdge(map, toPx(draft[draft.length - 1], view), q) : [q];
         setDraft((d) => [...d, ...pts.map((x) => toFrac(x, view))]);
         setSegs((sg) => [...sg, pts.length]);

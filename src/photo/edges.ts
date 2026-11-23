@@ -64,8 +64,8 @@ export function snapPoint(map: EdgeMap, p: Pt, radius: number): Pt {
   for (let y = cy - r; y <= cy + r; y++) {
     for (let x = cx - r; x <= cx + r; x++) {
       if (x < 0 || y < 0 || x >= map.w || y >= map.h || (x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
-      // Strong edges win; among equals, the nearest.
-      const score = map.mag[y * map.w + x] - 0.002 * Math.hypot(x - cx, y - cy);
+      // Strong edges win, but a nearer edge beats a slightly stronger one further away.
+      const score = map.mag[y * map.w + x] - (0.35 * Math.hypot(x - cx, y - cy)) / r;
       if (score > best) {
         best = score;
         bx = x;
@@ -73,7 +73,7 @@ export function snapPoint(map: EdgeMap, p: Pt, radius: number): Pt {
       }
     }
   }
-  return best >= 0.3 ? [bx * map.scale, by * map.scale] : p;
+  return map.mag[by * map.w + bx] >= 0.3 ? [bx * map.scale, by * map.scale] : p;
 }
 
 /** Douglas-Peucker: drop points closer than `tol` to the line through their neighbours. */
@@ -165,11 +165,12 @@ export function traceEdge(map: EdgeMap, a: Pt, b: Pt): Pt[] {
   const len = Math.hypot(bx - ax, by - ay);
   if (len < 4) return [b];
   const corridor = Math.max(4, len * 0.12);
-  const inCorridor = (x: number, y: number) => {
-    // Distance from the segment a–b.
+  /** Distance from the segment a–b (map pixels). */
+  const off = (x: number, y: number) => {
     const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / (len * len)));
-    return Math.hypot(x - (ax + (bx - ax) * t), y - (ay + (by - ay) * t)) <= corridor;
+    return Math.hypot(x - (ax + (bx - ax) * t), y - (ay + (by - ay) * t));
   };
+  const inCorridor = (x: number, y: number) => off(x, y) <= corridor;
   const { w, h, mag } = map;
   const dist = new Float64Array(w * h).fill(Infinity); // same precision as the heap, or nodes get skipped
   const from = new Int32Array(w * h).fill(-1);
@@ -192,8 +193,9 @@ export function traceEdge(map: EdgeMap, a: Pt, b: Pt): Pt[] {
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= h || !inCorridor(nx, ny)) continue;
         const j = ny * w + nx;
-        // Cheap along strong edges, dear across flat areas.
-        const step = (dx && dy ? Math.SQRT2 : 1) * (0.04 + (1 - mag[j]) ** 2);
+        // Cheap along strong edges, dear across flat areas, and a little dearer the further
+        // from the line between the taps (so it does not take a detour along another edge).
+        const step = (dx && dy ? Math.SQRT2 : 1) * (0.04 + (1 - mag[j]) ** 2 + 0.12 * (off(nx, ny) / corridor) ** 2);
         if (d + step < dist[j]) {
           dist[j] = d + step;
           from[j] = i;
@@ -211,7 +213,7 @@ export function traceEdge(map: EdgeMap, a: Pt, b: Pt): Pt[] {
   let strength = 0;
   for (const [x, y] of cells) strength += mag[Math.round(y / s) * w + Math.round(x / s)];
   if (strength / cells.length < 0.35) return [b];
-  const pts = simplify(cells, 1.2 * s);
+  const pts = simplify(cells, 2 * s);
   pts[pts.length - 1] = b;
   return pts.slice(1);
 }
