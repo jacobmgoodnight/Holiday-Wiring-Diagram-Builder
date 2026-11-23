@@ -4,6 +4,7 @@
  * Lengths come from the item (its "ft") or, failing that, from a measured photo.
  */
 import { clusterMembers } from '../diagram/layout';
+import { homeLink } from '../model/actions';
 import { inlineFemales, isRun } from '../model/graph';
 import type { Display, DisplayNode } from '../model/types';
 import { PALETTES, areaSizeFt, areaStyle, bulbColors, bulbCount, drawnAsLights, paletteOf, runLengthFt, runStyle, spacingInOf } from '../photo/geometry';
@@ -26,6 +27,25 @@ export interface TakeoffSection {
 export interface TakeoffOptions {
   /** Only items marked "New this year" (what you still have to buy). */
   onlyNew?: boolean;
+  /**
+   * Only what one photo needs: the items on it, and the cords and gear feeding them. Lengths
+   * come from that photo first.
+   */
+  viewId?: string;
+}
+
+/** Items on a photo plus everything upstream of them (cords, splitters, timers). */
+export function photoItems(display: Display, viewId: string): Set<string> {
+  const out = new Set<string>();
+  for (const n of Object.values(display.nodes)) {
+    if (!n.placements?.[viewId]) continue;
+    for (let id: string | undefined = n.id; id && !out.has(id); ) {
+      out.add(id);
+      const home = homeLink(display, id);
+      id = home?.kind === 'power' ? home.from : undefined;
+    }
+  }
+  return out;
 }
 
 const STYLE_NAME = { c9: 'C9/C7 light strings', mini: 'Mini light strings', icicle: 'Icicle lights', pixel: 'Pixels', pathway: 'Ground stake lights', plain: 'Lights' } as const;
@@ -56,9 +76,10 @@ export function colorsName(colors: string[]): string {
 }
 
 /** Length of a run: from the plan, else measured on a photo with a scale. */
-export function lengthOf(display: Display, node: DisplayNode): { ft: number; approx: boolean } | undefined {
+export function lengthOf(display: Display, node: DisplayNode, viewId?: string): { ft: number; approx: boolean } | undefined {
   if (node.lengthFt !== undefined) return { ft: node.lengthFt, approx: !!node.lengthApprox };
-  for (const view of display.views ?? []) {
+  const views = [...(display.views ?? [])].sort((a, b) => Number(b.id === viewId) - Number(a.id === viewId));
+  for (const view of views) {
     const p = node.placements?.[view.id];
     const ft = p ? runLengthFt(p, view, node.smooth) : undefined;
     if (ft !== undefined) return { ft, approx: true };
@@ -76,7 +97,10 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
     .flatMap((g) => g.members)
     .map((id) => display.nodes[id])
     .filter((n) => n && !n.retired && (!opts.onlyNew || n.isNew));
-  const onBush = (n: DisplayNode) => (display.views ?? []).some((v) => n.placements?.[v.id]?.kind === 'area');
+  const only = opts.viewId ? photoItems(display, opts.viewId) : undefined;
+  if (only) nodes.splice(0, nodes.length, ...nodes.filter((n) => only.has(n.id)));
+  const views = (display.views ?? []).filter((v) => !opts.viewId || v.id === opts.viewId);
+  const onBush = (n: DisplayNode) => views.some((v) => n.placements?.[v.id]?.kind === 'area');
 
   // Lights along the house, by type, colours and spacing.
   type RunGroup = {
@@ -111,7 +135,7 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
 
   for (const n of nodes) {
     if (n.kind === 'load' && drawnAsLights(n) && onBush(n)) {
-      const size = (display.views ?? []).map((v) => (n.placements?.[v.id] ? areaSizeFt(n.placements[v.id], v) : undefined)).find(Boolean);
+      const size = views.map((v) => (n.placements?.[v.id] ? areaSizeFt(n.placements[v.id], v) : undefined)).find(Boolean);
       const net = areaStyle(n) === 'net';
       const detail = size
         ? net
@@ -129,7 +153,7 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
       const item = stringer ? `C9 stringer · ${colorsName(colors)} · sockets ${spacing}″ apart` : `${STYLE_NAME[style]} · ${colorsName(colors)} · ${spacing}″ apart`;
       const g: RunGroup = runs.get(item) ?? { item, style, stringer, ft: 0, approx: false, bulbs: 0, perColor: new Map(), missing: [], ids: [], females: 0 };
       if (stringer && n.outputs !== undefined) g.females += n.outputs;
-      const len = lengthOf(display, n);
+      const len = lengthOf(display, n, opts.viewId);
       g.ids.push(n.id);
       if (len) {
         const copies = n.qty ?? 1;
@@ -149,7 +173,7 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
     if (n.kind === 'cord' && isRun(n)) {
       const item = n.subtype === 'spt' ? 'SPT-1 zip cord' : 'Multi-outlet extension cord';
       const g: ZipGroup = zip.get(item) ?? { ft: 0, approx: false, inline: 0, ends: 0, missing: [], ids: [] };
-      const len = lengthOf(display, n);
+      const len = lengthOf(display, n, opts.viewId);
       if (len) {
         g.ft += len.ft;
         g.approx ||= len.approx;

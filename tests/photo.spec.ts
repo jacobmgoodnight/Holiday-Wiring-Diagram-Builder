@@ -23,7 +23,9 @@ const tap = async (page: Page, x: number, y: number) => {
   await page.mouse.click(sx, sy);
 };
 
-async function sampleHouse(page: Page) {
+/** The sample house; "Follow edges" is off unless asked for, so drawn lengths are exact. */
+async function sampleHouse(page: Page, opts: { follow?: boolean } = {}) {
+  if (!opts.follow) await page.addInitScript(() => localStorage.setItem('wiring-sketchpad.followEdges', '0'));
   await page.goto('./');
   await newDisplay(page);
   await page.getByRole('button', { name: 'Photo', exact: true }).click();
@@ -343,4 +345,48 @@ test('a new photo walks you through measure, outlet, lights and plug in; looks a
   await coach.getByRole('button', { name: '🔌 Plug it in' }).click();
   await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
   await expect(coach).toHaveCount(0);
+});
+
+test('follow edges traces the roof line; photos can be renamed and each has its own shopping list', async ({ page }) => {
+  await sampleHouse(page, { follow: true });
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+  const follow = page.getByRole('button', { name: /Follow edges/ });
+  await expect(follow).toHaveAttribute('aria-pressed', 'true');
+  await expect(follow).not.toContainText('reading photo');
+  // Tap a little inside the roof at both eaves and the peak: the corners land on the roof edge.
+  for (const [x, y] of [[262, 440], [650, 200], [1038, 440]] as const) await tap(page, x, y);
+  await expect(page.locator('.photo-banner')).toContainText('3 points');
+  await page.getByRole('button', { name: 'Done' }).click();
+  const roofY = (x: number) => (x <= 650 ? 430 - ((x - 260) * 240) / 390 : 190 + ((x - 650) * 240) / 390);
+  const img = (await page.locator('.photo-stage img').boundingBox())!;
+  for (const n of [1, 2, 3]) {
+    const b = (await page.getByLabel(`Point ${n} of L01`).boundingBox())!;
+    const x = ((b.x + b.width / 2 - img.x) / img.width) * 1600;
+    const y = ((b.y + b.height / 2 - img.y) / img.height) * 1000;
+    expect(Math.abs(y - roofY(x))).toBeLessThan(8);
+  }
+
+  // Name the photo, add a second one, and list what each needs.
+  await page.getByLabel('Photo options').click();
+  await page.getByRole('menuitem', { name: 'Rename this photo…' }).click();
+  const rename = page.getByRole('dialog', { name: 'Rename this photo' });
+  await rename.getByRole('button', { name: 'Front of house' }).click();
+  await rename.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('tab', { name: 'Front of house' })).toBeVisible();
+  await page.getByLabel('Photo file').setInputFiles({ name: 'back.png', mimeType: 'image/png', buffer: readFileSync('public/icon-512.png') });
+  await expect(page.getByRole('tab', { name: 'Photo 2' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: '+ Add item' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add Inflatable', exact: true }).first().click();
+  await tap(page, 800, 500);
+  await expect(page.getByRole('button', { name: 'L02 Inflatable on photo' })).toBeVisible();
+
+  await page.getByLabel('Photo options').click();
+  await page.getByRole('menuitem', { name: '🧾 Shopping list…' }).click();
+  const list = page.getByRole('dialog', { name: 'Shopping list' });
+  await expect(list.getByLabel('Which photo')).toHaveValue(/.+/); // this photo
+  await expect(list.getByRole('region', { name: 'Props and other lights' })).toContainText('Inflatable');
+  await expect(list.getByRole('region', { name: 'Lights along the house' })).toHaveCount(0);
+  await list.getByLabel('Which photo').selectOption({ label: 'Everything in the plan' });
+  await expect(list.getByRole('region', { name: 'Lights along the house' })).toBeVisible();
 });

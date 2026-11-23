@@ -3,7 +3,7 @@ import { updateNode } from '../model/actions';
 import type { PhotoView } from '../model/types';
 import { buildDisplay } from '../outline/build';
 import { addView, setPlacement } from '../photo/actions';
-import { takeoff, takeoffRows, takeoffText } from './takeoff';
+import { photoItems, takeoff, takeoffRows, takeoffText } from './takeoff';
 
 const text = `# Test
 O01 Porch outlet
@@ -77,5 +77,21 @@ describe('shopping list', () => {
     expect(takeoffText('Test', s)).toContain('Lights along the house\n- C9/C7 light strings · Warm white · 12″ apart: ~60 ft (≈ 3 strings of 25 bulbs (62 bulbs) · buy ~66 ft with 10% for corners) [L01, L02]\n');
     expect(takeoffRows(s)[0]).toEqual(['section', 'item', 'quantity', 'detail', 'ids']);
     expect(takeoffRows(s)).toContainEqual(['Extension cords', '25 ft green extension cord', '× 1', '', 'C01']);
+  });
+});
+
+describe('shopping list for one photo', () => {
+  it('lists what is on that photo and what feeds it, using that photo for lengths', () => {
+    const back: PhotoView = { id: 'v2', name: 'Back', photoId: 'q', width: 1000, height: 500, feetPerPx: 0.1 };
+    let d = addView(plan(), back).display;
+    d = setPlacement(d, 'L05', 'v2', { kind: 'path', points: [[0.1, 0.5], [0.3, 0.5]] }).display; // 200 px = 20 ft here
+    d = updateNode(d, 'L05', { lengthFt: undefined }).display;
+    expect([...photoItems(d, 'v1')].sort()).toEqual(['C01', 'L01', 'L02', 'L06', 'O01']);
+    const front = takeoff(d, { viewId: 'v1' });
+    expect(front.map((x) => x.title)).toEqual(['Lights along the house', 'Bushes and trees', 'Extension cords']);
+    const backList = takeoff(d, { viewId: 'v2' });
+    expect(backList).toEqual([
+      { title: 'Lights along the house', lines: [expect.objectContaining({ item: 'C9/C7 light strings · Multicolor · 12″ apart', qty: '~20 ft', ids: ['L05'] })] },
+    ]);
   });
 });

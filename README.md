@@ -40,6 +40,13 @@ data model, phases and the decisions that need your review.
     from that item. Something added with **+ Add item** asks what it plugs into right away.
     Cables take the colour of the cord in between (and name it, "C01"); they attach at the
     end female or the nearest point of a light run.
+  * **🧲 Follow edges** (on while drawing, remembered): each tap snaps to the nearest edge in
+    the photo and the run follows the edge between taps, so tapping the roof's corners
+    (eaves and peak) traces the roof line. It stays close to the straight line between taps
+    and keeps it where the photo has no clear edge. "Undo point" takes back a traced stretch.
+  * **Several photos** (front, back, sides): rename each from the photo's ⋯ menu; the
+    shopping list can show everything or just what one photo needs (its items and the cords
+    and gear feeding them).
   * **Draw lights**: pick a style, tap along the house, and set **bulb colours, spacing**
     (C9/C7 and ground stakes 12″ by default, minis 4″), **wire colour** and **Smooth
     curves** (rounded corners, on by default for ground stakes) while you draw. Bulbs are

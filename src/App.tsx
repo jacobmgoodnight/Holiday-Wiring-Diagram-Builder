@@ -64,7 +64,20 @@ import { SelectionBar } from './ui/SelectionBar';
 import { ShoppingSheet } from './ui/ShoppingSheet';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
-import { addMeasure, addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeMeasure, removeView, setPlacement, spliceFemale, swapEnds } from './photo/actions';
+import {
+  addMeasure,
+  addPlacedNode,
+  addView,
+  moveFemale,
+  plugOnPhoto,
+  removeFemale,
+  removeMeasure,
+  removeView,
+  setPlacement,
+  spliceFemale,
+  swapEnds,
+  updateView,
+} from './photo/actions';
 import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt } from './photo/geometry';
 import { type LightOpts, lightPatch } from './photo/LightOptions';
 import { applyLookToAll, rememberLook, sameKind, withLook } from './photo/lightOpts';
@@ -238,7 +251,9 @@ export function App() {
   const lastAuto = useRef(new Map<string, number>());
   const [custom, setCustom] = useState<Preset[]>([]);
   const [labelsOpen, setLabelsOpen] = useState(false);
-  const [shoppingOpen, setShoppingOpen] = useState(false);
+  /** The shopping list, for the whole plan or one photo. */
+  const [shopping, setShopping] = useState<{ viewId?: string } | null>(null);
+  const shoppingOpen = !!shopping;
   const importInput = useRef<HTMLInputElement>(null);
   const refreshCustom = useCallback(async () => {
     if (persist.current) setCustom(await listCustomPresets());
@@ -1083,7 +1098,7 @@ export function App() {
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabelsOpen(true); }}>
                 Cord and plug labels…
               </button>
-              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShoppingOpen(true); }}>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
                 Shopping list…
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
@@ -1248,7 +1263,8 @@ export function App() {
               onMoveTap={slideFemale}
               onRemoveFemale={dropFemale}
               autoCords={autoCords}
-              onShoppingList={() => setShoppingOpen(true)}
+              onShoppingList={(viewId) => setShopping({ viewId })}
+              onRenameView={(name) => photoView && act((d) => updateView(d, photoView.id, { name }))}
               onToggleAutoCords={() => {
                 const next = !autoCords;
                 setAutoCords(next);
@@ -1385,16 +1401,17 @@ export function App() {
       {dialog === 'changes' && changes && (
         <ChangesDialog source={changes.source} changes={changes.list} onShow={showOnDiagram} onClose={() => setDialog(null)} />
       )}
-      {shoppingOpen && (
+      {shopping && (
         <ShoppingSheet
           display={display}
-          onDownloadCsv={(csv) => downloadText(csv, `${fileSlug(title)}-shopping-list.csv`, 'text/csv')}
+          initialViewId={shopping.viewId}
+          onDownloadCsv={(csv, photo) => downloadText(csv, `${fileSlug(title)}${photo ? `-${fileSlug(photo)}` : ''}-shopping-list.csv`, 'text/csv')}
           onPick={(id) => {
-            setShoppingOpen(false);
+            setShopping(null);
             if (mode === 'plan') jumpTo(id);
             else setSelected(id);
           }}
-          onClose={() => setShoppingOpen(false)}
+          onClose={() => setShopping(null)}
         />
       )}
       {labelsOpen && (

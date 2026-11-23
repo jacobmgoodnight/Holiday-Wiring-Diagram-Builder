@@ -52,7 +52,9 @@ interface Props {
   /** Add extension cords automatically when a strand does not reach. */
   autoCords: boolean;
   onToggleAutoCords: () => void;
-  onShoppingList: () => void;
+  /** Open the shopping list for this photo. */
+  onShoppingList: (viewId: string) => void;
+  onRenameView: (name: string) => void;
   blocked?: Set<string>;
   fitKey: string;
   /** Phone: the selection bar replaces the photo actions while something is selected. */
@@ -64,7 +66,8 @@ export function PhotoPane(props: Props) {
   const file = useRef<HTMLInputElement>(null);
   const [night, setNight] = useState(false);
   const [wiring, setWiring] = useState(true);
-  const [sheet, setSheet] = useState<null | 'draw' | 'plan' | 'picture'>(null);
+  const [sheet, setSheet] = useState<null | 'draw' | 'plan' | 'picture' | 'rename'>(null);
+  const [photoName, setPhotoName] = useState('');
   const closeMenu = (e: React.MouseEvent) => {
     const d = (e.currentTarget as HTMLElement).closest('details');
     if (d) d.open = false;
@@ -157,7 +160,7 @@ export function PhotoPane(props: Props) {
                 role="menuitem"
                 onClick={(e) => {
                   closeMenu(e);
-                  props.onShoppingList();
+                  props.onShoppingList(view.id);
                 }}
               >
                 🧾 Shopping list…
@@ -166,6 +169,17 @@ export function PhotoPane(props: Props) {
                 <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />
                 Add extension cords when a strand does not reach
               </label>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  closeMenu(e);
+                  setPhotoName(view.name);
+                  setSheet('rename');
+                }}
+              >
+                Rename this photo…
+              </button>
               <button type="button" role="menuitem" className="danger" onClick={() => props.onRemoveView(view)}>
                 Remove this photo
               </button>
@@ -280,6 +294,38 @@ export function PhotoPane(props: Props) {
         </Sheet>
       )}
 
+      {sheet === 'rename' && (
+        <Sheet title="Rename this photo" onClose={() => setSheet(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = photoName.trim();
+              if (name) props.onRenameView(name);
+              setSheet(null);
+            }}
+          >
+            <label className="field wide">
+              <span>Name</span>
+              <input autoFocus value={photoName} onChange={(e) => setPhotoName(e.target.value)} placeholder="Front of house, back yard, left side…" />
+            </label>
+            <div className="chips-row">
+              {['Front of house', 'Back of house', 'Left side', 'Right side', 'Backyard', 'Driveway'].map((n) => (
+                <button key={n} type="button" className="chip" onClick={() => setPhotoName(n)}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div className="row confirm-row">
+              <button type="button" onClick={() => setSheet(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="primary" disabled={!photoName.trim()}>
+                Save
+              </button>
+            </div>
+          </form>
+        </Sheet>
+      )}
       {sheet === 'picture' && <PictureSheet display={display} view={view} photoUrl={props.photoUrl} night={night} onClose={() => setSheet(null)} />}
 
       {sheet === 'plan' && (

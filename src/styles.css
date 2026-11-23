@@ -551,3 +551,9 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 /* The message after a change never blocks taps on the photo; only its Undo button is live. */
 .toast { pointer-events: none; }
 .toast button { pointer-events: auto; }
+
+/* Trace and photos round */
+.photo-banner button[aria-pressed="true"] { background: var(--text); color: var(--panel); border-color: var(--text); }
+.shopping-photo { width: auto; min-width: 240px; margin-bottom: 4px; }
+.chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.chips-row .chip { min-height: 34px; }

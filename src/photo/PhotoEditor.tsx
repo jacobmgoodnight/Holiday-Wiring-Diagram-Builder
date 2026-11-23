@@ -32,6 +32,16 @@ import {
 } from './geometry';
 import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
 import { lookFor } from './lightOpts';
+import { type EdgeMap, loadEdgeMap, snapPoint, traceEdge } from './edges';
+
+const FOLLOW_KEY = 'wiring-sketchpad.followEdges';
+const readFollow = () => {
+  try {
+    return localStorage.getItem(FOLLOW_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
 
 /** What the next tap on the photo does. */
 export type PhotoIntent =
@@ -122,6 +132,11 @@ export function PhotoEditor(props: Props) {
   const [refName, setRefName] = useState<string | undefined>();
   const [preview, setPreview] = useState<{ nodeId: string; placement: Placement } | null>(null);
   const [opts, setOpts] = useState<LightOpts | undefined>();
+  /** Follow edges while drawing: snap taps to edges and trace the photo between them. */
+  const [follow, setFollow] = useState(readFollow);
+  const [edges, setEdges] = useState<EdgeMap | undefined>();
+  /** How many draft points each tap added (a traced stretch is several), for "Undo point". */
+  const [segs, setSegs] = useState<number[]>([]);
   /** Drawing started on an open female: the new run plugs in there. */
   const [snap, setSnap] = useState<{ parent: string; port: string } | undefined>();
   /** An inline female being slid along its run. */
@@ -146,6 +161,7 @@ export function PhotoEditor(props: Props) {
     setDraft([]);
     setFeet('');
     setSnap(undefined);
+    setSegs([]);
     setRefName(undefined);
     // New lights start with the look last chosen for that kind, so the house stays matching.
     setOpts(
@@ -154,6 +170,19 @@ export function PhotoEditor(props: Props) {
         : undefined,
     );
   }, [intent]);
+
+  // The photo's edges, worked out once per photo, when drawing with "Follow edges" on.
+  useEffect(() => {
+    if (intent?.type !== 'draw' || !follow || !photoUrl) return;
+    let live = true;
+    setEdges(undefined);
+    loadEdgeMap(photoUrl, view.width, view.height)
+      .then((m) => live && setEdges(m))
+      .catch(() => live && setEdges(undefined));
+    return () => {
+      live = false;
+    };
+  }, [intent?.type, follow, photoUrl, view.width, view.height]);
 
   // When the box changes size (details panel opens, phone rotates): re-fit if the photo was
   // fitted, otherwise keep the same spot in the middle.
@@ -254,10 +283,18 @@ export function PhotoEditor(props: Props) {
     else if (intent.type === 'draw') {
       // Starting on an open female (the end of the last strand) plugs the new one in there.
       const s = draft.length ? undefined : nearestOpenSocket(display, view, p, 24 * u, intent.nodeId);
+      const map = follow ? edges : undefined;
       if (s) {
         setSnap({ parent: s.parent, port: s.port });
         setDraft([toFrac(s.at, view)]);
-      } else setDraft((d) => [...d, f]);
+        setSegs([1]);
+      } else {
+        // Snap the tap onto an edge, and follow the edge from the last point.
+        const q = map ? snapPoint(map, p, 10 * u) : p;
+        const pts = map && draft.length ? traceEdge(map, toPx(draft[draft.length - 1], view), q) : [q];
+        setDraft((d) => [...d, ...pts.map((x) => toFrac(x, view))]);
+        setSegs((sg) => [...sg, pts.length]);
+      }
     } else if (intent.type === 'scale') setDraft((d) => (d.length >= 2 ? [f] : [...d, f]));
     else if (intent.type === 'splice') {
       const n = display.nodes[intent.nodeId];
@@ -632,7 +669,7 @@ export function PhotoEditor(props: Props) {
                     (plugs into <b>{drawing.target.parent}</b>)
                   </>
                 ) : null}
-                . {draft.length ? `${draft.length} point${draft.length === 1 ? '' : 's'}.` : drawing.area ? 'Start where it plugs in.' : 'Start at the plug end, or on an open female to plug in there.'}
+                . {segs.length ? `${segs.length} point${segs.length === 1 ? '' : 's'}.` : drawing.area ? 'Start where it plugs in.' : 'Start at the plug end, or on an open female to plug in there.'}
                 {snap && (
                   <>
                     {' '}
@@ -646,11 +683,31 @@ export function PhotoEditor(props: Props) {
                 type="button"
                 disabled={!draft.length}
                 onClick={() => {
-                  if (draft.length === 1) setSnap(undefined);
-                  setDraft((d) => d.slice(0, -1));
+                  // A traced stretch goes back in one step.
+                  const n = segs[segs.length - 1] ?? 1;
+                  if (segs.length <= 1) setSnap(undefined);
+                  setDraft((d) => d.slice(0, Math.max(0, d.length - n)));
+                  setSegs((sg) => sg.slice(0, -1));
                 }}
               >
                 Undo point
+              </button>
+              <button
+                type="button"
+                aria-pressed={follow}
+                className={follow ? 'on' : ''}
+                title="Snap taps to edges in the photo and follow the roof line between them"
+                onClick={() => {
+                  const next = !follow;
+                  setFollow(next);
+                  try {
+                    localStorage.setItem(FOLLOW_KEY, next ? '1' : '0');
+                  } catch {
+                    // private mode: this visit only
+                  }
+                }}
+              >
+                🧲 Follow edges{follow && photoUrl && !edges ? ' (reading photo…)' : ''}
               </button>
               <button type="button" className="primary" disabled={draft.length < (drawing.area ? 3 : 2)} onClick={() => props.onFinishRun(drawing, draft, opts, snap)}>
                 Done

@@ -457,3 +457,21 @@ Decisions:
   is useful without lengths; the steps stay visible until done or hidden.
 * **D39. A remembered look belongs to the display**, so it travels with backups and "Copy
   for next year", and a different house keeps its own colours.
+
+## Trace and photos round
+
+* **Follow edges** (`src/photo/edges.ts`): the photo is shrunk to about 640 px, turned grey,
+  blurred lightly and run through a Sobel filter once per photo. A tap snaps to the
+  strongest edge within 10 screen px; between taps the run is the cheapest path along edges
+  (Dijkstra on 8 neighbours, cost low on strong edges) inside a corridor of 12% of the
+  distance around the straight line, simplified with Douglas-Peucker. If the found path is
+  not mostly on edges, the straight line stays. A toggle in the drawing bar, on by default.
+* **Shopping list per photo**: "What <photo> needs" lists items on that photo plus
+  everything upstream of them; lengths come from that photo first. Opened from a photo, the
+  list starts there. Photos can be renamed (Front of house, Back of house, Left side…).
+
+Decisions:
+
+* **D40. Tracing stays near your taps.** A wider search would also find the gutter, the wall
+  or a window; tapping each corner (eaves and peak) is more reliable than guessing.
+* **D41. No new libraries**: edge finding is ~200 lines of plain TypeScript.
