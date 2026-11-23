@@ -359,6 +359,8 @@ test('follow edges traces the roof line; photos can be renamed and each has its 
   await expect(page.locator('.photo-banner')).toContainText('3 points');
   await page.getByRole('button', { name: 'Done' }).click();
   const roofY = (x: number) => (x <= 650 ? 430 - ((x - 260) * 240) / 390 : 190 + ((x - 650) * 240) / 390);
+  await expect(page.getByLabel('Point 3 of L01')).toBeVisible();
+  await settled(page); // the bottom bar changes after Done, and the photo re-fits on a phone
   const img = (await page.locator('.photo-stage img').boundingBox())!;
   for (const n of [1, 2, 3]) {
     const b = (await page.getByLabel(`Point ${n} of L01`).boundingBox())!;
