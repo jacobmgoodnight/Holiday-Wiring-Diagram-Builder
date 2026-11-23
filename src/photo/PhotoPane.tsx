@@ -3,7 +3,8 @@ import type { Display, Placement, PhotoView } from '../model/types';
 import { iconFor } from '../presets/custom';
 import { PRESETS } from '../presets/presets';
 import { Sheet } from '../ui/Sheet';
-import { type Pt, drawnAsLights, drawsAsArea, unplaced } from './geometry';
+import type { Target } from '../model/actions';
+import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, unplaced } from './geometry';
 import type { LightOpts } from './LightOptions';
 import { type LightNode, PhotoEditor, type PhotoIntent } from './PhotoEditor';
 
@@ -28,13 +29,22 @@ interface Props {
   /** Open the icon picker; the chosen preset is then placed with a tap. */
   onAddItem: () => void;
   onPlacePoint: (intent: PhotoIntent, at: Pt) => void;
-  onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts) => void;
+  onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts, snap?: Target) => void;
   onSkipPlacing: (intent: PhotoIntent) => void;
   /** The item or preset being drawn, for the live preview and its light options. */
   draftBase?: LightNode;
   onSetScale: (feetPerPx: number) => void;
   onMovePlacement: (nodeId: string, placement: Placement) => void;
-  onPlugInto: (nodeId: string, parentId: string) => void;
+  onPlugInto: (nodeId: string, parentId: string, port?: string) => void;
+  onConnect: (intent: Extract<PhotoIntent, { type: 'connect' }>, childId: string) => void;
+  onConnectNew: (intent: Extract<PhotoIntent, { type: 'connect' }>) => void;
+  onSocketTap: (runId: string, port: string) => void;
+  onSplice: (runId: string, along: number) => void;
+  onMoveTap: (runId: string, index: number, along: number) => void;
+  onRemoveFemale: (runId: string, index: number) => void;
+  /** Add extension cords automatically when a strand does not reach. */
+  autoCords: boolean;
+  onToggleAutoCords: () => void;
   blocked?: Set<string>;
   fitKey: string;
   /** Phone: the selection bar replaces the photo actions while something is selected. */
@@ -117,6 +127,10 @@ export function PhotoPane(props: Props) {
           <details className="menu">
             <summary aria-label="Photo options">⋯</summary>
             <div className="menu-list" role="menu">
+              <label className="menu-check" role="menuitemcheckbox" aria-checked={props.autoCords}>
+                <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />
+                Add extension cords when a strand does not reach
+              </label>
               <button type="button" role="menuitem" className="danger" onClick={() => props.onRemoveView(view)}>
                 Remove this photo
               </button>
@@ -140,6 +154,12 @@ export function PhotoPane(props: Props) {
         onSetScale={props.onSetScale}
         onMovePlacement={props.onMovePlacement}
         onPlugInto={props.onPlugInto}
+        onConnect={props.onConnect}
+        onConnectNew={props.onConnectNew}
+        onSocketTap={props.onSocketTap}
+        onSplice={props.onSplice}
+        onMoveTap={props.onMoveTap}
+        onRemoveFemale={props.onRemoveFemale}
         blocked={props.blocked}
         night={night}
         wiring={wiring}
@@ -219,14 +239,14 @@ export function PhotoPane(props: Props) {
                   onClick={() => {
                     setSheet(null);
                     props.setIntent(
-                      drawnAsLights(n)
-                        ? { type: 'draw', nodeId: n.id, name: `${n.id} ${n.label}`, area: drawsAsArea(n) }
+                      drawnAsRun(n)
+                        ? { type: 'draw', nodeId: n.id, name: `${n.id} ${n.label}`, area: drawnAsLights(n) && drawsAsArea(n) }
                         : { type: 'place', nodeId: n.id, name: `${n.id} ${n.label}` },
                     );
                   }}
                 >
                   <span aria-hidden="true">{iconFor(n)}</span> <b className="dn-id">{n.id}</b> {n.label}
-                  <span className="muted small"> {drawnAsLights(n) ? (drawsAsArea(n) ? '· outline' : '· draw') : '· tap to place'}</span>
+                  <span className="muted small"> {drawnAsRun(n) ? (drawnAsLights(n) && drawsAsArea(n) ? '· outline' : '· draw') : '· tap to place'}</span>
                 </button>
               </li>
             ))}

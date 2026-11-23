@@ -6,10 +6,15 @@ import { copyForNextYear } from '../model/season';
 import type { PhotoView } from '../model/types';
 import { buildDisplay } from '../outline/build';
 import { syncFromModel } from '../outline/sync';
-import { addPlacedNode, addView, removeView, setPlacement, updateView } from './actions';
+import { addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeView, setPlacement, spliceFemale, updateView } from './actions';
 import {
   type Pt,
   areaBulbs,
+  cordFor,
+  nearestOpenSocket,
+  pointAlong,
+  runSocketSpots,
+  tapPositions,
   bulbColors,
   bulbCount,
   bulbSpacingPx,
@@ -262,5 +267,84 @@ describe('placing items', () => {
     d = setPlacement(d, 'S02', 'v1', { kind: 'point', x: 0.3, y: 0.5 }).display;
     d = deleteNode(d, 'S02', true).display;
     expect(wiringLines(d, view)).toEqual([]);
+  });
+});
+
+describe('inline females and cords on the photo', () => {
+  const sptText = 'O01 Porch outlet\n  C01 SPT-1 zip cord\n    Wreath\n';
+  /** C01 zip cord with tap1 (the wreath on it), tap2 and an end female, drawn along y = 200. */
+  const spt = () => {
+    let d = addView(buildDisplay(sptText, { id: 'x' }).display, view).display;
+    d = updateNode(d, 'C01', { outputs: 3 }).display;
+    return setPlacement(d, 'C01', 'v1', { kind: 'path', points: [[0.1, 0.2], [0.5, 0.2]] }).display; // 200..1000 px
+  };
+
+  it('spreads inline females evenly until they are placed', () => {
+    expect(tapPositions({ kind: 'path', points: [] }, 2)).toEqual([1 / 3, 2 / 3]);
+    expect(tapPositions({ kind: 'path', points: [], taps: [0.5] }, 3)).toEqual([0.5, 0.5 + 0.5 / 3, 0.5 + 1 / 3]);
+    expect(tapPositions({ kind: 'path', points: [], taps: [0.2, 0.4, 0.9] }, 2)).toEqual([0.2, 0.4]);
+    expect(pointAlong([[0, 0], [10, 0], [10, 10]], 0.75)).toEqual([10, 5]);
+  });
+
+  it('shows where each female is and what is plugged into it', () => {
+    const spots = runSocketSpots(spt(), 'C01', view)!;
+    expect(spots.map((s) => [s.port, Math.round(s.at[0]), s.childId])).toEqual([
+      ['tap1', 467, 'L01'],
+      ['tap2', 733, undefined],
+      ['end', 1000, undefined],
+    ]);
+    // The wreath's cable starts at its female.
+    const d = setPlacement(spt(), 'L01', 'v1', { kind: 'point', x: 0.25, y: 0.4 }).display;
+    expect(wiringLines(d, view)[0].from[0]).toBeCloseTo(466.7, 0);
+    expect(nearestOpenSocket(d, view, [990, 210], 30)).toMatchObject({ parent: 'C01', port: 'end' });
+    expect(nearestOpenSocket(d, view, [600, 400], 30)).toBeUndefined();
+  });
+
+  it('splices a female in where you tap, renumbering the ones after it', () => {
+    const r = spliceFemale(spt(), 'C01', 'v1', 0.1); // before tap1
+    expect(r.port).toBe('tap1');
+    const d = r.display;
+    expect(d.nodes.C01.outputs).toBe(4);
+    expect(d.nodes.C01.placements?.v1).toMatchObject({ taps: [0.1, 1 / 3, 2 / 3] });
+    expect(d.links.find((l) => l.to === 'L01')?.port).toBe('tap2'); // the wreath stays on its female
+    expect(syncFromModel(d).text).toBe('O01 Porch outlet\n  C01 SPT-1 zip cord\n    tap2: Wreath\n');
+  });
+
+  it('slides a female along; past another it takes the other number, plug and all', () => {
+    const d = moveFemale(spt(), 'C01', 'v1', 0, 0.9).display; // tap1 (wreath) slides past tap2
+    expect(d.nodes.C01.placements?.v1).toMatchObject({ taps: [2 / 3, 0.9] });
+    expect(d.links.find((l) => l.to === 'L01')?.port).toBe('tap2');
+  });
+
+  it('removes an empty female, but not one in use', () => {
+    const d = removeFemale(spt(), 'C01', 'v1', 1).display;
+    expect(d.nodes.C01.outputs).toBe(2);
+    expect(() => removeFemale(spt(), 'C01', 'v1', 0)).toThrow(/L01 is plugged into C01 tap 1/);
+  });
+
+  it('adds an extension cord, sized to a common length, when the next strand does not reach', () => {
+    expect(cordFor(4)).toBe(6);
+    expect(cordFor(20)).toBe(25);
+    expect(cordFor(120)).toBe(150);
+    let d = addView(buildDisplay('O01 Porch\n  L01 C9 roofline run\nL02 C9 garage run\n', { id: 'x' }).display, { ...view, feetPerPx: 0.05 }).display;
+    const v = d.views![0];
+    d = updateNode(d, 'L01', { outputs: 1 }).display;
+    d = setPlacement(d, 'L01', 'v1', { kind: 'path', points: [[0.1, 0.2], [0.5, 0.2]] }).display; // ends at x = 1000
+    // Starts 400 px (20 ft) past the end of L01: a 25 ft cord goes in between.
+    const far = setPlacement(d, 'L02', 'v1', { kind: 'path', points: [[0.7, 0.2], [0.9, 0.2]] }).display;
+    const r = plugOnPhoto(far, v, 'L02', { parent: 'L01', port: 'end' });
+    expect(r.cordFt).toBe(25);
+    expect(syncFromModel(r.display).text).toBe('O01 Porch\n  L01 C9 roofline run\n    C01 Green extension cord 25ft\n      L02 C9 garage run\n');
+    expect(wiringLines(r.display, v).find((l) => l.childId === 'L02')).toMatchObject({ parentId: 'L01', via: [r.cordId], color: '#2f6b3a' });
+    // Touching ends plug straight in; so does "no cords" mode.
+    const near = setPlacement(d, 'L02', 'v1', { kind: 'path', points: [[0.505, 0.2], [0.9, 0.2]] }).display;
+    expect(plugOnPhoto(near, v, 'L02', { parent: 'L01', port: 'end' }).cordId).toBeUndefined();
+    expect(plugOnPhoto(far, v, 'L02', { parent: 'L01', port: 'end' }, { autoCord: false }).cordId).toBeUndefined();
+    expect(() => plugOnPhoto(far, v, 'L01', { parent: 'L01' })).toThrow(/itself/);
+    // Two markers (an outlet and an inflatable) never get a cord added for them.
+    let m = addView(buildDisplay('O01 Porch\nL01 Inflatable\n', { id: 'm' }).display, { ...view, feetPerPx: 0.05 }).display;
+    m = setPlacement(m, 'O01', 'v1', { kind: 'point', x: 0.1, y: 0.5 }).display;
+    m = setPlacement(m, 'L01', 'v1', { kind: 'point', x: 0.8, y: 0.9 }).display;
+    expect(plugOnPhoto(m, m.views![0], 'L01', { parent: 'O01' }).cordId).toBeUndefined();
   });
 });

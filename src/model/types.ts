@@ -212,8 +212,11 @@ export interface PhotoView {
 
 export type Placement =
   | { kind: 'point'; x: number; y: number }
-  /** A light run drawn along the house: at least two points. */
-  | { kind: 'path'; points: [number, number][] }
+  /**
+   * A run drawn along the house: at least two points. `taps` places its inline females
+   * (tap1, tap2…) as fractions 0..1 along the drawn run, in order.
+   */
+  | { kind: 'path'; points: [number, number][]; taps?: number[] }
   /** Lights covering an area (a bush or tree): a closed outline of at least three points. */
   | { kind: 'area'; points: [number, number][] };
 

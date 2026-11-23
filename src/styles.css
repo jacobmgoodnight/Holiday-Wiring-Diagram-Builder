@@ -439,6 +439,16 @@ button.big { min-height: 52px; font-size: 1rem; }
 .location .chip { min-height: 32px; font-size: 0.8rem; padding: 0 10px; }
 .run.target { cursor: copy; }
 
+/* Photo builder round: females on runs, snapping, measuring references */
+.socket { cursor: pointer; }
+.socket.open rect { filter: drop-shadow(0 0 2px rgb(255 255 255 / 0.9)); }
+.photo.night .socket.open rect { filter: drop-shadow(0 0 3px rgb(255 214 120 / 0.9)); }
+.snap-note { color: var(--ok, #15803d); white-space: nowrap; }
+.measure-refs { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
+.measure-refs .chip { min-height: 32px; font-size: 0.78rem; padding: 0 10px; }
+.scale-form { flex-wrap: wrap; }
+.menu-check { display: flex; gap: 8px; align-items: center; padding: 8px 12px; font-size: 0.9rem; min-height: 44px; cursor: pointer; }
+
 .confirm-row { display: flex; gap: 8px; justify-content: flex-end; }
 button.danger-solid { background: var(--err); border-color: var(--err); color: #fff; }
 

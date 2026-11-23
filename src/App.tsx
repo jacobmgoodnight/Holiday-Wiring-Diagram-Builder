@@ -63,8 +63,8 @@ import { NodePanel } from './ui/NodePanel';
 import { SelectionBar } from './ui/SelectionBar';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
-import { addPlacedNode, addView, removeView, setPlacement, updateView } from './photo/actions';
-import { type Pt, drawnAsLights, drawsAsArea, runLengthFt } from './photo/geometry';
+import { addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeView, setPlacement, spliceFemale, updateView } from './photo/actions';
+import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt } from './photo/geometry';
 import { type LightOpts, lightPatch } from './photo/LightOptions';
 import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
 import type { LightNode, PhotoIntent } from './photo/PhotoEditor';
@@ -76,6 +76,8 @@ import { ThemeButton } from './ui/ThemeButton';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
 const OVERALL = '__overall__';
+/** Photo: add extension cords automatically when a strand does not reach ("1" or "0"). */
+const AUTO_CORDS_KEY = 'wiring-sketchpad.autoCords';
 /** Automatic restore points: at most one per display per this interval while editing. */
 const AUTO_SNAPSHOT_MS = 10 * 60 * 1000;
 /**
@@ -215,6 +217,13 @@ export function App() {
   const [mode, setMode] = useState<'plan' | 'photo' | 'checklist'>('plan');
   const [viewId, setViewId] = useState<string | undefined>();
   const [intent, setIntent] = useState<PhotoIntent | undefined>();
+  const [autoCords, setAutoCords] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_CORDS_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
   const [photoPicker, setPhotoPicker] = useState(false);
   const [busyPhoto, setBusyPhoto] = useState(false);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
@@ -783,7 +792,21 @@ export function App() {
 
   /** What a photo intent puts on the photo: a light item is drawn, anything else placed. */
   const photoIntentFor = (p: Preset, target?: Target): PhotoIntent =>
-    drawnAsLights(p) ? { type: 'draw', presetId: p.id, name: p.name, target, area: drawsAsArea(p) } : { type: 'place', presetId: p.id, name: p.name, target };
+    drawnAsRun(p) ? { type: 'draw', presetId: p.id, name: p.name, target, area: drawnAsLights(p) && drawsAsArea(p) } : { type: 'place', presetId: p.id, name: p.name, target };
+
+  /** Plug in on the photo (adding an extension cord when a strand does not reach). */
+  const plugHere = (d: Display, childId: string, target: Target) =>
+    photoView ? plugOnPhoto(d, photoView, childId, target, { autoCord: autoCords, isNew: isNewHere(d) }) : replug(d, childId, target);
+  /** Says so when plugging in added an extension cord; true if it did. */
+  const cordNote = (res: ActionResult, parent: string | null | undefined) => {
+    const r = res as ActionResult & { cordId?: string; cordFt?: number };
+    if (r.cordId)
+      showToast(
+        `Added ${r.cordId}, a ${r.cordFt ? `${r.cordFt} ft ` : ''}extension cord, to reach ${parent}${r.cordFt ? '' : ' (measure the photo to size it)'}`,
+        true,
+      );
+    return !!r.cordId;
+  };
 
   /**
    * After a new item lands on the photo: select it, and if it is not plugged in yet and there
@@ -809,27 +832,74 @@ export function App() {
       const p = presetById(it.presetId, custom);
       if (!p) return;
       noteUsed(p.id);
-      act((d) => addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, placement, it.target), afterPlaced);
+      const target = it.target;
+      act(
+        (d) => {
+          const r = addPlacedNode(d, { ...p, isNew: isNewHere(d) }, photoView.id, placement);
+          return target?.parent ? plugHere(r.display, r.nodeId!, target) : r;
+        },
+        (r, next) => {
+          afterPlaced(r, next);
+          cordNote(r, target?.parent);
+        },
+      );
     }
   };
 
-  const finishRun = (it: PhotoIntent, points: Pt[], opts?: LightOpts) => {
+  const finishRun = (it: PhotoIntent, points: Pt[], opts?: LightOpts, snap?: Target) => {
     if (!photoView || it.type !== 'draw') return;
     setIntent(undefined);
     const placement = it.area ? { kind: 'area' as const, points } : { kind: 'path' as const, points };
     if (it.nodeId) {
       const id = it.nodeId;
-      act((d) => {
-        const placed = setPlacement(d, id, photoView.id, placement);
-        return opts ? updateNode(placed.display, id, lightPatch(d.nodes[id], opts)) : placed;
-      }, () => setSelected(id));
+      act(
+        (d) => {
+          const placed = setPlacement(d, id, photoView.id, placement);
+          const looked = opts ? updateNode(placed.display, id, lightPatch(d.nodes[id], opts)) : placed;
+          return snap ? plugHere(looked.display, id, snap) : looked;
+        },
+        (r) => {
+          setSelected(id);
+          cordNote(r, snap?.parent);
+        },
+      );
     } else if (it.presetId) {
       const p = presetById(it.presetId, custom);
       if (!p) return;
       noteUsed(p.id);
       const look = opts ? lightPatch(p, opts) : {};
-      act((d) => addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement, it.target), afterPlaced);
+      // Starting on an open female wins over where "+ Plug in" was pressed.
+      const target = snap ?? it.target;
+      act(
+        (d) => {
+          const r = addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement);
+          return target?.parent ? plugHere(r.display, r.nodeId!, target) : r;
+        },
+        (r, next) => {
+          afterPlaced(r, next);
+          cordNote(r, target?.parent);
+        },
+      );
     }
+  };
+
+  /** Inline females on a run: splice one in, slide one along, take an empty one off. */
+  const spliceAt = (runId: string, along: number) => {
+    if (!photoView) return;
+    act(
+      (d) => spliceFemale(d, runId, photoView.id, along),
+      (r) => {
+        setSelected(runId);
+        setIntent((it) => (it?.type === 'splice' ? { ...it, added: (it.added ?? 0) + 1 } : it));
+        showToast(`Spliced an inline female into ${runId} (${'port' in r ? String(r.port).replace('tap', 'tap ') : ''})`, true);
+      },
+    );
+  };
+  const slideFemale = (runId: string, index: number, along: number) => photoView && act((d) => moveFemale(d, runId, photoView.id, index, along));
+  const dropFemale = (runId: string, index: number) => {
+    if (!photoView) return;
+    setIntent(undefined);
+    act((d) => removeFemale(d, runId, photoView.id, index), () => showToast(`Removed an inline female from ${runId}`, true));
   };
 
   /** "Add without placing": the new item goes into the plan only. */
@@ -918,10 +988,13 @@ export function App() {
           <PhotoNodeActions
             placement={selNode.placements?.[photoView.id]}
             lengthFt={selNode.placements?.[photoView.id] ? runLengthFt(selNode.placements[photoView.id], photoView, selNode.smooth) : undefined}
-            isLight={drawnAsLights(selNode)}
+            drawn={drawnAsRun(selNode)}
+            canBush={drawnAsLights(selNode)}
+            canSplice={isRun(selNode) && selNode.placements?.[photoView.id]?.kind === 'path'}
+            onSplice={() => setIntent({ type: 'splice', nodeId: selNode.id })}
             onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
             onDraw={(area) => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}`, area })}
-            defaultArea={drawsAsArea(selNode)}
+            defaultArea={drawnAsLights(selNode) && drawsAsArea(selNode)}
             onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
             onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
           />
@@ -1119,15 +1192,45 @@ export function App() {
                 showToast('Scale saved: light runs now show their length', true);
               }}
               onMovePlacement={(id, placement) => photoView && act((d) => setPlacement(d, id, photoView.id, placement))}
-              onPlugInto={(id, parent) => {
+              onPlugInto={(id, parent, port) => {
                 setIntent(undefined);
                 act(
-                  (d) => replug(d, id, { parent }),
+                  (d) => plugHere(d, id, { parent, port }),
                   (r) => {
                     setSelected(r.nodeId);
-                    if (!r.warning) showToast(`Plugged ${id} into ${parent}`, true);
+                    if (cordNote(r, parent)) return;
+                    if (!r.warning) showToast(`Plugged ${id} into ${parent}${port ? ` ${port.replace(/^tap/, 'tap ')}` : ''}`, true);
                   },
                 );
+              }}
+              onConnect={(it, childId) => {
+                setIntent(undefined);
+                act(
+                  (d) => plugHere(d, childId, { parent: it.parentId, port: it.port }),
+                  (r) => {
+                    setSelected(childId);
+                    if (cordNote(r, it.parentId)) return;
+                    if (!r.warning) showToast(`Plugged ${childId} into ${it.parentId} ${it.port.replace(/^tap/, 'tap ')}`, true);
+                  },
+                );
+              }}
+              onConnectNew={(it) => {
+                setIntent(undefined);
+                openPicker({ parent: it.parentId, port: it.port });
+              }}
+              onSocketTap={(runId, port) => setIntent({ type: 'connect', parentId: runId, port })}
+              onSplice={spliceAt}
+              onMoveTap={slideFemale}
+              onRemoveFemale={dropFemale}
+              autoCords={autoCords}
+              onToggleAutoCords={() => {
+                const next = !autoCords;
+                setAutoCords(next);
+                try {
+                  localStorage.setItem(AUTO_CORDS_KEY, next ? '1' : '0');
+                } catch {
+                  // private mode: the choice lasts for this visit only
+                }
               }}
               blocked={intent?.type === 'move' ? subtreeOf(intent.nodeId) : undefined}
               fitKey={`${doc.id}:${fitNonce}`}
@@ -1347,27 +1450,40 @@ export function App() {
 function PhotoNodeActions(props: {
   placement?: Placement;
   lengthFt?: number;
-  isLight: boolean;
+  /** Drawn as a run (lights, zip cord) rather than placed as a marker. */
+  drawn: boolean;
+  /** Lights can also light a bush. */
+  canBush: boolean;
+  /** A run drawn on this photo: inline females can be spliced in. */
+  canSplice: boolean;
   /** Lights that are outlined as a bush (net lights, wraps) rather than drawn as a run. */
   defaultArea: boolean;
   onPlace: () => void;
   onDraw: (area: boolean) => void;
+  onSplice: () => void;
   onRemove: () => void;
   onUseLength: (ft: number) => void;
 }) {
-  const { placement, lengthFt, isLight, defaultArea } = props;
+  const { placement, lengthFt, drawn, canBush, defaultArea } = props;
   const ft = lengthFt !== undefined ? Math.round(lengthFt) : undefined;
   const area = placement && placement.kind !== 'point' ? placement.kind === 'area' : defaultArea;
   return (
     <>
-      {isLight ? (
+      {drawn ? (
         <>
           <button type="button" className="primary" onClick={() => props.onDraw(area)}>
             {area ? '🌳' : '✏️'} {placement && placement.kind !== 'point' ? 'Redraw on photo' : area ? 'Outline on photo' : 'Draw on photo'}
           </button>
-          <button type="button" onClick={() => props.onDraw(!area)}>
-            {area ? '✏️ Draw as a run' : '🌳 Light a bush'}
-          </button>
+          {props.canSplice && (
+            <button type="button" onClick={props.onSplice}>
+              ✂️ Add inline female
+            </button>
+          )}
+          {canBush && (
+            <button type="button" onClick={() => props.onDraw(!area)}>
+              {area ? '✏️ Draw as a run' : '🌳 Light a bush'}
+            </button>
+          )}
         </>
       ) : (
         <button type="button" className={placement ? '' : 'primary'} onClick={props.onPlace}>

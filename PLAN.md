@@ -368,3 +368,39 @@ Decisions:
   keep their old behaviour; nothing is guessed for them.
 * **D33. Wire colour and light options are model-only** (like notes and placements) and
   survive text edits.
+
+## Photo builder round
+
+You asked what other tools offer, for inline females at a chosen spot, and for joining the
+end of one strand to the next with an automatic extension cord.
+
+What others do (Nov 2026): Bright Home Designer traces the roofline on a photo, previews
+styles with adjustable bulb spacing and estimates footage from one known dimension;
+LumiSketch does photo mockups for permanent RGB lighting; LightQuoter and QuoteIQ measure
+rooflines on satellite images; Clipa turns footage by difficulty into proposals. All of
+them note that lengths from a flat photo are estimates.
+
+* **Inline females on the photo.** A path placement can hold `taps` (0..1 along the run);
+  females without a stored spot spread evenly after the last stored one. Females show as
+  small socket icons (white = open) on the selected run, on zip cords while Wiring is on,
+  and on every run while plugging in or drawing. ✂️ Add inline female splices one in where
+  you tap; dragging slides it; tapping an open one plugs a strand or a new item into it.
+  Renumbering (tap1, tap2… from the plug end) moves what is plugged in with its female.
+* **Zip cord on the photo.** SPT and multi-outlet cords are drawn as runs (a plain wire in
+  the cord colour), like lights.
+* **End to end.** Starting a drawing within reach of an open female snaps to it and plugs
+  the new run in there. Plugging a strand in (or into a female on a run) where the ends do
+  not meet adds a green extension cord, sized with ~15% slack plus a foot to the next of
+  6, 9, 15, 25, 40, 50, 75, 100 ft once the photo has a scale; unsized without one. Markers
+  plugged into markers (an inflatable into an outlet) never get one. Off switch: photo ⋯.
+* **Cables** to the selected item show their straight-line length once measured. In
+  "Tap what it plugs into", tapping a run picks its nearest open female.
+* **Measure** has size chips (double/single garage door, front door width and height,
+  window).
+
+Decisions:
+
+* **D34. Female positions are per photo.** Reordering females on one photo resets custom
+  spots on the run's other photos to even spacing, so numbers and spots never disagree.
+* **D35. Auto cords only where a strand is involved** and the gap is over 1.5 ft; they are
+  ordinary items (undo removes them, delete or re-plug like any cord).

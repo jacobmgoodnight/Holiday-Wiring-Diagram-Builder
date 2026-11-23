@@ -1,6 +1,6 @@
 /** Photo overlay geometry and look (pure). Placements are stored as 0..1 fractions. */
 import { homeLink } from '../model/actions';
-import { socketLabels } from '../model/graph';
+import { isRun, powerChildren, runSockets, socketLabels } from '../model/graph';
 import type { Display, DisplayNode, Placement, PhotoView } from '../model/types';
 import { clusterMembers } from '../diagram/layout';
 
@@ -103,6 +103,11 @@ export const DRAWN_CATEGORIES = new Set(['c9', 'mini', 'icicle', 'pixel', 'pathw
 
 export function drawnAsLights(node: Pick<DisplayNode, 'kind' | 'category'>): boolean {
   return node.kind === 'load' && DRAWN_CATEGORIES.has(node.category ?? '');
+}
+
+/** Drawn as a run on the photo: lights, and SPT zip cord or multi-outlet cords with females. */
+export function drawnAsRun(node: Pick<DisplayNode, 'kind' | 'category' | 'subtype'>): boolean {
+  return drawnAsLights(node) || (node.kind === 'cord' && isRun(node));
 }
 
 /** Net lights, bush wraps and lit trees are outlined as an area instead of a run. */
@@ -257,6 +262,100 @@ export function nearestOnPolyline(points: Pt[], p: Pt): { at: Pt; along: number 
   return { at: best.at, along: best.along };
 }
 
+/** The point a fraction (0..1) of the way along a polyline. */
+export function pointAlong(points: Pt[], along: number): Pt {
+  if (points.length < 2) return points[0] ?? [0, 0];
+  let left = Math.min(1, Math.max(0, along)) * polylineLength(points);
+  for (let i = 1; i < points.length; i++) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    const seg = Math.hypot(x1 - x0, y1 - y0);
+    if (left <= seg && seg > 0) return [x0 + ((x1 - x0) * left) / seg, y0 + ((y1 - y0) * left) / seg];
+    left -= seg;
+  }
+  return points[points.length - 1];
+}
+
+/**
+ * Where a run's `n` inline females sit (0..1 along it): the stored positions in order, and
+ * any others spread evenly after the last stored one.
+ */
+export function tapPositions(placement: Placement, n: number): number[] {
+  if (n <= 0) return [];
+  const given = placement.kind === 'path' ? (placement.taps ?? []).slice(0, n) : [];
+  const out = [...given];
+  const last = given.length ? given[given.length - 1] : 0;
+  const m = n - given.length;
+  for (let k = 1; k <= m; k++) out.push(last + ((1 - last) * k) / (m + 1));
+  return out;
+}
+
+export interface SocketSpot {
+  /** Socket name: tap1, tap2… or end. */
+  port: string;
+  /** Photo pixels. */
+  at: Pt;
+  /** 0..1 along the run. */
+  along: number;
+  /** Inline females only: 0 for tap1. */
+  index?: number;
+  /** What is plugged in there. */
+  childId?: string;
+}
+
+/**
+ * The females of a run drawn on this photo: inline ones at their positions, the end one at
+ * the end. Undefined when it is not drawn here as a run or its socket count is unknown.
+ */
+export function runSocketSpots(display: Display, nodeId: string, view: PhotoView): SocketSpot[] | undefined {
+  const node = display.nodes[nodeId];
+  const placement = node?.placements?.[view.id];
+  if (!placement || placement.kind !== 'path') return undefined;
+  const names = runSockets(node);
+  if (!names) return undefined;
+  const shape = shapePx(placement, view, node.smooth)!;
+  const pos = tapPositions(placement, names.filter((x) => x !== 'end').length);
+  const labels = socketLabels(display, nodeId);
+  const plugged = new Map<string, string>();
+  for (const l of powerChildren(display, nodeId)) {
+    const lab = labels.get(l.id);
+    if (lab && l.to) plugged.set(lab, l.to);
+  }
+  return names.map((port, i) =>
+    port === 'end'
+      ? { port, at: shape[shape.length - 1], along: 1, childId: plugged.get(port) }
+      : { port, at: pointAlong(shape, pos[i]), along: pos[i], index: i, childId: plugged.get(port) },
+  );
+}
+
+/** The nearest open female on any run on this photo, within `maxPx` of `p`. */
+export function nearestOpenSocket(display: Display, view: PhotoView, p: Pt, maxPx: number, exclude?: string): { parent: string; port: string; at: Pt } | undefined {
+  let best: { parent: string; port: string; at: Pt; d: number } | undefined;
+  for (const n of Object.values(display.nodes)) {
+    if (n.id === exclude) continue;
+    for (const s of runSocketSpots(display, n.id, view) ?? []) {
+      if (s.childId) continue;
+      const d = Math.hypot(s.at[0] - p[0], s.at[1] - p[1]);
+      if (d <= maxPx && (!best || d < best.d)) best = { parent: n.id, port: s.port, at: s.at, d };
+    }
+  }
+  return best && { parent: best.parent, port: best.port, at: best.at };
+}
+
+/** Feet between two photo points (a rough figure: the photo is flat, the house is not). */
+export function gapFt(a: Pt, b: Pt, view: Pick<PhotoView, 'width' | 'height' | 'feetPerPx'>): number {
+  return Math.hypot(b[0] - a[0], b[1] - a[1]) / footPx(view);
+}
+
+/** Common outdoor extension cord lengths. */
+export const CORD_SIZES_FT = [3, 6, 9, 15, 25, 40, 50, 75, 100];
+
+/** The shortest common cord that spans a gap, with some slack for going around things. */
+export function cordFor(gap: number): number {
+  const need = gap * 1.15 + 1;
+  return CORD_SIZES_FT.find((s) => s >= need) ?? Math.ceil(need / 50) * 50;
+}
+
 export type AreaStyle = 'net' | 'wrap';
 
 /** Net lights make a diamond mesh; anything else is wrapped through the bush. */
@@ -351,6 +450,8 @@ export interface WiringLine {
   color: string;
   /** Cords in between that are not on the photo, e.g. ["C01"]. */
   via: string[];
+  /** Straight-line length in feet, once the photo has a scale. */
+  lengthFt?: number;
 }
 
 /**
@@ -375,11 +476,12 @@ export function wiringLines(display: Display, view: PhotoView): WiringLine[] {
         const shape = shapePx(up, view, parent.smooth);
         if (shape) {
           const port = socketLabels(display, parent.id).get(cur.id);
-          from = port === 'end' && up.kind === 'path' ? shape[shape.length - 1] : nearestOnPolyline(shape, to).at;
+          const spot = runSocketSpots(display, parent.id, view)?.find((x) => x.port === port);
+          from = spot ? spot.at : port === 'end' && up.kind === 'path' ? shape[shape.length - 1] : nearestOnPolyline(shape, to).at;
         }
         const cord = via.length ? display.nodes[via[0]] : undefined; // the cord this item plugs into
         const color = cableColor(cord?.color) ?? (n.kind === 'load' ? wireColorOf(n) : cableColor(n.color)) ?? CABLE.green;
-        out.push({ childId: n.id, parentId: parent.id, from, to, color, via: [...via].reverse() });
+        out.push({ childId: n.id, parentId: parent.id, from, to, color, via: [...via].reverse(), lengthFt: view.feetPerPx ? gapFt(from, to, view) : undefined });
         break;
       }
       if (parent?.kind === 'cord') via.push(parent.id);

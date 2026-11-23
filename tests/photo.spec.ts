@@ -148,7 +148,9 @@ test('plug in on the photo draws the cable; lights take colours and spacing; bus
   await page.getByLabel('Bulb spacing').selectOption('8');
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.locator('[data-wire="O01>L01"]')).toHaveCount(1);
-  await expectText(page, { contains: 'O01 Outlet\n  C9 roofline run\n' });
+  // The roofline starts well away from the outlet, so an extension cord goes in between.
+  await expect(page.locator('.toast')).toContainText('Added C01');
+  await expectText(page, { contains: 'O01 Outlet\n  C01 Green extension cord\n    C9 roofline run\n' });
   const details = await openDetails(page, 'L01');
   await expect(details.getByLabel('Bulb colors')).toHaveValue('multi');
   await expect(details.getByLabel('Bulb spacing')).toHaveValue('8');
@@ -167,5 +169,55 @@ test('plug in on the photo draws the cable; lights take colours and spacing; bus
   await expect(page.locator('.photo-banner')).toContainText('Tap what L02 plugs into');
   await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
   await expect(page.locator('[data-wire="O01>L02"]')).toHaveCount(1);
-  await expectText(page, { contains: 'O01 Outlet\n  C9 roofline run\n  Net lights\n' });
+  await expectText(page, { contains: '  C02 Green extension cord\n    Net lights\n' });
+});
+
+test('strands snap end to end, a gap gets a sized extension cord, and females splice in where you tap', async ({ page }) => {
+  await sampleHouse(page);
+  // Measure the double garage door with the size chip.
+  await page.getByRole('button', { name: /Measure/ }).click();
+  await expect(page.locator('.photo-banner')).toContainText('front door 3 ft wide');
+  await tap(page, 1040, 760);
+  await tap(page, 1340, 760);
+  await page.getByRole('button', { name: 'Double garage door 16 ft' }).click();
+  await expect(page.getByLabel('Length in feet')).toHaveValue('16');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const draw = async (points: (readonly [number, number])[]) => {
+    await tap(page, 1500, 120); // empty sky: nothing selected
+    await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+    await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+    for (const [x, y] of points) await tap(page, x, y);
+  };
+  await draw([[260, 430], [650, 190]]);
+  await page.getByRole('button', { name: 'Done' }).click();
+  // Start the next strand on the end of the first: it plugs into L01's end female.
+  await draw([[655, 195]]);
+  await expect(page.locator('.photo-banner')).toContainText('✓ Plugs into L01 end');
+  await tap(page, 1040, 430);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expectText(page, { contains: 'C9 roofline run\n  C9 roofline run\n' });
+
+  // The garage strand starts a gap away: tap L02's end female and a 9 ft cord goes in between.
+  await draw([[950, 480], [1190, 330], [1430, 480]]);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('Tap what L03 plugs into');
+  await page.getByRole('button', { name: 'Open female end on L02' }).click();
+  await expect(page.locator('.toast')).toContainText('Added C01, a 9 ft extension cord, to reach L02');
+  await expectText(page, { contains: '    C01 Green extension cord 9ft\n      C9 roofline run\n' });
+
+  // Splice an inline female into L01 where you tap, then plug a wreath into it.
+  await tap(page, 455, 310);
+  await page.getByRole('region', { name: 'Selected L01' }).getByRole('button', { name: '✂️ Add inline female' }).click();
+  await tap(page, 455, 310);
+  await expect(page.locator('.photo-banner')).toContainText('(1 added)');
+  await page.locator('.photo-banner').getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Open female tap 1 on L01' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('plugs into L01 tap 1');
+  await page.getByRole('button', { name: '+ New item' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add Wreath', exact: true }).first().click();
+  await tap(page, 470, 330);
+  await expect(page.locator('[data-wire="L01>L04"]')).toHaveCount(1);
+  await expectText(page, { contains: 'C9 roofline run\n  end: C9 roofline run\n' });
+  await expectText(page, { contains: '  Wreath\n' });
 });

@@ -1,5 +1,5 @@
 import { type PointerEvent as RPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { toneOf } from '../diagram/layout';
+import { prettyPort, toneOf } from '../diagram/layout';
 import type { Target } from '../model/actions';
 import type { Display, DisplayNode, Placement, PhotoView } from '../model/types';
 import { iconFor } from '../presets/custom';
@@ -14,8 +14,12 @@ import {
   bulbCount,
   bulbSpacingPx,
   cablePath,
+  pointAlong,
   feetPerPxFrom,
   footPx,
+  nearestOnPolyline,
+  nearestOpenSocket,
+  runSocketSpots,
   pointsAlong,
   polylineLength,
   runStyle,
@@ -36,7 +40,20 @@ export type PhotoIntent =
   | { type: 'draw'; nodeId?: string; presetId?: string; name: string; target?: Target; area?: boolean }
   | { type: 'scale' }
   /** Tap what this item plugs into; `fresh` right after adding it ("Later" instead of Cancel). */
-  | { type: 'move'; nodeId: string; fresh?: boolean };
+  | { type: 'move'; nodeId: string; fresh?: boolean }
+  /** An open female was tapped: tap the strand or item that plugs into it. */
+  | { type: 'connect'; parentId: string; port: string }
+  /** Tap along a run to splice inline females into it. */
+  | { type: 'splice'; nodeId: string; added?: number };
+
+/** Things of known size, for measuring the photo. */
+export const MEASURE_REFS: { name: string; ft: number; size: string }[] = [
+  { name: 'Double garage door', ft: 16, size: '16 ft' },
+  { name: 'Single garage door', ft: 9, size: '8–9 ft' },
+  { name: 'Front door, wide', ft: 3, size: '3 ft' },
+  { name: 'Front door, tall', ft: 6.67, size: '6 ft 8 in' },
+  { name: 'Window (often)', ft: 3, size: '3 ft' },
+];
 
 /** What a light item looks like: a plan item, or a preset about to become one. */
 export type LightNode = Pick<DisplayNode, 'id' | 'kind' | 'label' | 'category' | 'color' | 'bulbColors' | 'spacingIn' | 'smooth' | 'wireColor'>;
@@ -52,13 +69,23 @@ interface Props {
   draftBase?: LightNode;
   onCancelIntent: () => void;
   onPlacePoint: (intent: PhotoIntent, at: Pt) => void;
-  onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts) => void;
+  /** `snap`: the drawing started on an open female, so the new run plugs in there. */
+  onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts, snap?: Target) => void;
   /** Add the new item to the plan without putting it on the photo. */
   onSkipPlacing?: (intent: PhotoIntent) => void;
   onSetScale: (feetPerPx: number) => void;
   onMovePlacement: (nodeId: string, placement: Placement) => void;
-  /** Move intent: plug the moving item into the tapped one. */
-  onPlugInto: (nodeId: string, parentId: string) => void;
+  /** Move intent: plug the moving item into the tapped one (into the nearest open female on a run). */
+  onPlugInto: (nodeId: string, parentId: string, port?: string) => void;
+  /** Connect intent: plug the tapped item into the chosen female. */
+  onConnect: (intent: Extract<PhotoIntent, { type: 'connect' }>, childId: string) => void;
+  /** Connect intent: plug a new item from the picker into the chosen female. */
+  onConnectNew: (intent: Extract<PhotoIntent, { type: 'connect' }>) => void;
+  /** A female on a run was tapped (nothing else going on). */
+  onSocketTap: (runId: string, port: string) => void;
+  onSplice: (runId: string, along: number) => void;
+  onMoveTap: (runId: string, index: number, along: number) => void;
+  onRemoveFemale: (runId: string, index: number) => void;
   /** Items that cannot be plug targets for the moving item. */
   blocked?: Set<string>;
   night: boolean;
@@ -86,6 +113,10 @@ export function PhotoEditor(props: Props) {
   const [feet, setFeet] = useState('');
   const [preview, setPreview] = useState<{ nodeId: string; placement: Placement } | null>(null);
   const [opts, setOpts] = useState<LightOpts | undefined>();
+  /** Drawing started on an open female: the new run plugs in there. */
+  const [snap, setSnap] = useState<{ parent: string; port: string } | undefined>();
+  /** An inline female being slid along its run. */
+  const [tapPreview, setTapPreview] = useState<{ runId: string; index: number; along: number } | null>(null);
   // Light options while drawing: open on wide screens, a tap away on phones.
   const [showStyle, setShowStyle] = useState(() => typeof window === 'undefined' || window.innerWidth >= 720);
 
@@ -105,6 +136,7 @@ export function PhotoEditor(props: Props) {
   useEffect(() => {
     setDraft([]);
     setFeet('');
+    setSnap(undefined);
     setOpts(intent?.type === 'draw' && draftBase ? lightOptsOf(draftBase) : undefined);
   }, [intent]);
 
@@ -202,9 +234,23 @@ export function PhotoEditor(props: Props) {
     }
     if (!inPhoto(p)) return;
     const f = toFrac(p, view);
+    const u = 1 / xfRef.current.k;
     if (intent.type === 'place') props.onPlacePoint(intent, f);
-    else if (intent.type === 'draw') setDraft((d) => [...d, f]);
-    else if (intent.type === 'scale') setDraft((d) => (d.length >= 2 ? [f] : [...d, f]));
+    else if (intent.type === 'draw') {
+      // Starting on an open female (the end of the last strand) plugs the new one in there.
+      const s = draft.length ? undefined : nearestOpenSocket(display, view, p, 24 * u, intent.nodeId);
+      if (s) {
+        setSnap({ parent: s.parent, port: s.port });
+        setDraft([toFrac(s.at, view)]);
+      } else setDraft((d) => [...d, f]);
+    } else if (intent.type === 'scale') setDraft((d) => (d.length >= 2 ? [f] : [...d, f]));
+    else if (intent.type === 'splice') {
+      const n = display.nodes[intent.nodeId];
+      const pl = n?.placements?.[view.id];
+      if (pl?.kind !== 'path') return;
+      const near = nearestOnPolyline(shapePx(pl, view, n.smooth)!, p);
+      if (Math.hypot(near.at[0] - p[0], near.at[1] - p[1]) <= 30 * u) props.onSplice(intent.nodeId, near.along);
+    }
   };
 
   // ---- Marker and vertex drags (commit on release; a tap selects).
@@ -241,13 +287,56 @@ export function PhotoEditor(props: Props) {
     if (d.moved && preview && preview.nodeId === d.id) props.onMovePlacement(d.id, preview.placement);
     else if (!d.moved) {
       if (intent?.type === 'move') {
-        if (d.id !== intent.nodeId && !props.blocked?.has(d.id)) props.onPlugInto(intent.nodeId, d.id);
-      } else if (intent?.type === 'draw' || intent?.type === 'scale' || intent?.type === 'place') {
+        if (d.id !== intent.nodeId && !props.blocked?.has(d.id)) {
+          // On a run, the nearest open female to where you tapped.
+          const at = toImage(e.clientX, e.clientY);
+          const open = (runSocketSpots(display, d.id, view) ?? []).filter((x) => !x.childId);
+          const near = open.sort((a, b) => Math.hypot(a.at[0] - at[0], a.at[1] - at[1]) - Math.hypot(b.at[0] - at[0], b.at[1] - at[1]))[0];
+          props.onPlugInto(intent.nodeId, d.id, near?.port);
+        }
+      } else if (intent?.type === 'connect') {
+        if (d.id !== intent.parentId) props.onConnect(intent, d.id);
+      } else if (intent?.type === 'draw' || intent?.type === 'scale' || intent?.type === 'place' || intent?.type === 'splice') {
         // Taps on top of markers still count as photo taps in these modes.
         tapAt(toImage(e.clientX, e.clientY));
       } else props.onSelect(d.id);
     }
     setPreview(null);
+  };
+
+  // ---- Females on runs: tap to plug something in, drag an inline one along its run.
+  const sockDrag = useRef<{ runId: string; port: string; index?: number; childId?: string; start: Pt; moved: boolean } | null>(null);
+  const sockDown = (e: RPointerEvent, runId: string, spot: { port: string; index?: number; childId?: string }) => {
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    sockDrag.current = { runId, port: spot.port, index: spot.index, childId: spot.childId, start: [e.clientX, e.clientY], moved: false };
+  };
+  const sockMove = (e: RPointerEvent) => {
+    const s = sockDrag.current;
+    if (!s || intent || s.index === undefined) return;
+    if (!s.moved && Math.hypot(e.clientX - s.start[0], e.clientY - s.start[1]) <= TAP_SLOP) return;
+    s.moved = true;
+    const n = display.nodes[s.runId];
+    const pl = n?.placements?.[view.id];
+    if (pl?.kind !== 'path') return;
+    setTapPreview({ runId: s.runId, index: s.index, along: nearestOnPolyline(shapePx(pl, view, n.smooth)!, toImage(e.clientX, e.clientY)).along });
+  };
+  const sockUp = (e: RPointerEvent) => {
+    const s = sockDrag.current;
+    sockDrag.current = null;
+    if (!s) return;
+    e.stopPropagation();
+    if (s.moved && tapPreview && s.index !== undefined) props.onMoveTap(s.runId, s.index, tapPreview.along);
+    else if (!s.moved) {
+      if (intent?.type === 'move') {
+        if (s.runId !== intent.nodeId && !props.blocked?.has(s.runId)) props.onPlugInto(intent.nodeId, s.runId, s.port);
+      } else if (intent?.type === 'connect') {
+        if (s.runId !== intent.parentId) props.onConnect(intent, s.runId);
+      } else if (intent) tapAt(toImage(e.clientX, e.clientY));
+      else if (s.childId) props.onSelect(s.childId);
+      else props.onSocketTap(s.runId, s.port);
+    }
+    setTapPreview(null);
   };
 
   // ---- Data to draw (a drag in progress shows where it will land, cables included).
@@ -267,6 +356,19 @@ export function PhotoEditor(props: Props) {
     return out.sort((a, b) => layer(a.placement) - layer(b.placement) || Number(a.node.id === selectedId) - Number(b.node.id === selectedId));
   }, [live, view.id, selectedId]);
   const lines = useMemo(() => (wiring ? wiringLines(live, view) : []), [live, view, wiring]);
+  // Females to show: on the selected run, on zip cords while Wiring is on, and on every run
+  // while plugging in or drawing.
+  const sockets = useMemo(() => {
+    const all = intent?.type === 'move' || intent?.type === 'connect' || intent?.type === 'draw';
+    const only = intent?.type === 'splice' ? intent.nodeId : !intent ? selectedId : undefined;
+    const out: { runId: string; spots: NonNullable<ReturnType<typeof runSocketSpots>> }[] = [];
+    for (const n of Object.values(live.nodes)) {
+      if (!all && n.id !== only && !(wiring && !intent && n.kind === 'cord')) continue;
+      const spots = runSocketSpots(live, n.id, view);
+      if (spots?.length) out.push({ runId: n.id, spots });
+    }
+    return out;
+  }, [live, view, intent, selectedId, wiring]);
 
   const k = xf.k;
   const u = 1 / k; // one screen pixel in photo pixels
@@ -274,7 +376,14 @@ export function PhotoEditor(props: Props) {
   const markerR = 17 * u;
   const drawPx = draft.map((p) => toPx(p, view));
   const movingId = intent?.type === 'move' ? intent.nodeId : undefined;
-  const plugTarget = (intent?.type === 'place' || intent?.type === 'draw') && intent.target ? intent.target.parent : undefined;
+  const plugTarget =
+    (intent?.type === 'place' || intent?.type === 'draw') && intent.target
+      ? intent.target.parent
+      : intent?.type === 'splice'
+        ? intent.nodeId
+        : intent?.type === 'connect'
+          ? intent.parentId
+          : undefined;
 
   const scalePx = intent?.type === 'scale' && draft.length === 2 ? drawPx : null;
   const scaleFeet = Number(feet);
@@ -334,7 +443,8 @@ export function PhotoEditor(props: Props) {
               const d = cablePath(l.from, l.to);
               const sag = Math.min(Math.hypot(l.to[0] - l.from[0], l.to[1] - l.from[1]) * 0.18, 400);
               const mid: Pt = [(l.from[0] + l.to[0]) / 2, (l.from[1] + l.to[1]) / 2 + sag / 2];
-              const via = l.via.join(', ');
+              const len = l.lengthFt !== undefined && hot ? `~${Math.round(l.lengthFt)} ft` : '';
+              const via = [l.via.join(', '), len].filter(Boolean).join(' · ');
               return (
                 <g key={`w-${l.childId}`} className={`cable${hot ? ' hot' : ''}`} pointerEvents="none">
                   <path d={d} fill="none" stroke={hot ? '#f59e0b' : 'rgba(0,0,0,0.55)'} strokeWidth={(hot ? 6 : 4.2) * u} strokeLinecap="round" />
@@ -388,6 +498,30 @@ export function PhotoEditor(props: Props) {
                   onUp={endDrag}
                 />
               ) : null,
+            )}
+
+            {sockets.map(({ runId, spots }) =>
+              spots.map((sp) => {
+                const moving = tapPreview && tapPreview.runId === runId && tapPreview.index === sp.index;
+                const n = live.nodes[runId];
+                const pl = n.placements?.[view.id];
+                const at = moving && pl?.kind === 'path' ? pointAlong(shapePx(pl, view, n.smooth)!, tapPreview.along) : sp.at;
+                const name = prettyPort(sp.port);
+                const hot = intent?.type === 'connect' && intent.parentId === runId && intent.port === sp.port;
+                return (
+                  <Socket
+                    key={`${runId}-${sp.port}`}
+                    at={at}
+                    u={u}
+                    open={!sp.childId}
+                    hot={hot || (snap?.parent === runId && snap.port === sp.port)}
+                    label={sp.childId ? `${runId} ${name}: ${sp.childId} plugs in here` : `Open female ${name} on ${runId}`}
+                    onDown={(e) => sockDown(e, runId, sp)}
+                    onMove={sockMove}
+                    onUp={sockUp}
+                  />
+                );
+              }),
             )}
 
             {drawing && draftNode && draftPlacement && <Lights {...lightsProps(draftNode, draftPlacement)} draft />}
@@ -451,12 +585,27 @@ export function PhotoEditor(props: Props) {
                     (plugs into <b>{drawing.target.parent}</b>)
                   </>
                 ) : null}
-                . {draft.length ? `${draft.length} point${draft.length === 1 ? '' : 's'}.` : drawing.area ? 'Start where it plugs in.' : 'Start at the plug end.'}
+                . {draft.length ? `${draft.length} point${draft.length === 1 ? '' : 's'}.` : drawing.area ? 'Start where it plugs in.' : 'Start at the plug end, or on an open female to plug in there.'}
+                {snap && (
+                  <>
+                    {' '}
+                    <b className="snap-note">
+                      ✓ Plugs into {snap.parent} {prettyPort(snap.port)}
+                    </b>
+                  </>
+                )}
               </span>
-              <button type="button" disabled={!draft.length} onClick={() => setDraft((d) => d.slice(0, -1))}>
+              <button
+                type="button"
+                disabled={!draft.length}
+                onClick={() => {
+                  if (draft.length === 1) setSnap(undefined);
+                  setDraft((d) => d.slice(0, -1));
+                }}
+              >
                 Undo point
               </button>
-              <button type="button" className="primary" disabled={draft.length < (drawing.area ? 3 : 2)} onClick={() => props.onFinishRun(drawing, draft, opts)}>
+              <button type="button" className="primary" disabled={draft.length < (drawing.area ? 3 : 2)} onClick={() => props.onFinishRun(drawing, draft, opts, snap)}>
                 Done
               </button>
               <button type="button" onClick={props.onCancelIntent}>
@@ -489,16 +638,56 @@ export function PhotoEditor(props: Props) {
                 <button type="submit" className="primary" disabled={!(scaleFeet > 0)}>
                   Save
                 </button>
+                <span className="measure-refs" role="group" aria-label="Common sizes">
+                  {MEASURE_REFS.map((r) => (
+                    <button key={r.name} type="button" className="chip" onClick={() => setFeet(String(r.ft))}>
+                      {r.name} {r.size}
+                    </button>
+                  ))}
+                </span>
               </form>
             ) : (
-              <span>Tap both ends of something you know the length of (a garage door is often 16 ft).</span>
+              <span>
+                Tap both ends of something you know the size of: a double garage door is 16 ft wide, a front door 3 ft wide
+                and 6 ft 8 in tall. Windows vary (often 3 ft, but 2 to 4 ft), so measure one if you can.
+              </span>
             ))}
           {intent.type === 'move' && (
             <span>
-              Tap what <b>{intent.nodeId}</b> plugs into{intent.fresh ? ' to run its cord' : ''}.
+              Tap what <b>{intent.nodeId}</b> plugs into{intent.fresh ? ' to run its cord' : ''}. On a run, tap near the female it uses.
             </span>
           )}
-          {!drawing && (
+          {intent.type === 'connect' && (
+            <>
+              <span>
+                Tap the strand or item that plugs into{' '}
+                <b>
+                  {intent.parentId} {prettyPort(intent.port)}
+                </b>
+                .
+              </span>
+              <button type="button" className="primary" onClick={() => props.onConnectNew(intent)}>
+                + New item
+              </button>
+              {intent.port.startsWith('tap') && (
+                <button type="button" onClick={() => props.onRemoveFemale(intent.parentId, Number(intent.port.slice(3)) - 1)}>
+                  Remove this female
+                </button>
+              )}
+            </>
+          )}
+          {intent.type === 'splice' && (
+            <>
+              <span>
+                Tap along <b>{intent.nodeId}</b> where an inline female goes{intent.added ? ` (${intent.added} added)` : ''}. Drag a female to
+                slide it.
+              </span>
+              <button type="button" className="primary" onClick={props.onCancelIntent}>
+                Done
+              </button>
+            </>
+          )}
+          {!drawing && intent.type !== 'splice' && (
             <button type="button" onClick={props.onCancelIntent}>
               {intent.type === 'move' && intent.fresh ? 'Later' : 'Cancel'}
             </button>
@@ -639,7 +828,8 @@ function Lights(props: LightsProps) {
   );
   const line = shape.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const b = useMemo(() => bounds(shape), [shape]);
-  const wireW = Math.max(0.28 * inch, 1.3 * ub);
+  const cord = node.kind === 'cord';
+  const wireW = cord ? Math.max(0.35 * inch, 2.4 * ub) : Math.max(0.28 * inch, 1.3 * ub);
   const sym = shapeKind === 'c9' ? 'bulb-c9' : 'bulb-mini';
   const lit = night ? '-lit' : '';
   const fid = `${node.id}${draft ? '-draft' : ''}`;
@@ -733,7 +923,7 @@ function Lights(props: LightsProps) {
       onPointerUp={onUp}
       pointerEvents={draft ? 'none' : undefined}
       aria-hidden={draft || undefined}
-      aria-label={draft ? undefined : area ? `${node.id} ${node.label} on a bush` : `${node.id} ${node.label} light run`}
+      aria-label={draft ? undefined : area ? `${node.id} ${node.label} on a bush` : cord ? `${node.id} ${node.label} run` : `${node.id} ${node.label} light run`}
       role={draft ? undefined : 'button'}
     >
       {!draft &&
@@ -761,7 +951,7 @@ function Lights(props: LightsProps) {
         ) : (
           <polyline points={line} fill="none" stroke={wire} strokeWidth={wireW} strokeLinecap="round" strokeLinejoin="round" />
         )}
-        {style === 'plain' && !area && <polyline points={line} fill="none" stroke={colors[0]} strokeWidth={5 * u} strokeDasharray={`${2 * u} ${6 * u}`} strokeLinecap="round" />}
+        {style === 'plain' && !area && !cord && <polyline points={line} fill="none" stroke={colors[0]} strokeWidth={5 * u} strokeDasharray={`${2 * u} ${6 * u}`} strokeLinecap="round" />}
         {body}
         <g transform={`translate(${lx} ${ly - 18 * u - lift})`}>
           <rect x={-labelW / 2} y={-12 * u} width={labelW} height={18 * u} rx={5 * u} fill="rgba(255,255,255,0.92)" stroke="#475569" strokeWidth={u} />
@@ -787,6 +977,21 @@ function Lights(props: LightsProps) {
             />
           );
         })}
+    </g>
+  );
+}
+
+/** A female connector on a run: white when open, filled when something is plugged in. */
+function Socket(props: { at: Pt; u: number; open: boolean; hot: boolean; label: string; onDown: (e: RPointerEvent) => void; onMove: (e: RPointerEvent) => void; onUp: (e: RPointerEvent) => void }) {
+  const { at, u, open, hot, label } = props;
+  const w = 15 * u;
+  const h = 10 * u;
+  return (
+    <g className={`socket${open ? ' open' : ''}${hot ? ' hot' : ''}`} transform={`translate(${at[0]} ${at[1]})`} role="button" aria-label={label} onPointerDown={props.onDown} onPointerMove={props.onMove} onPointerUp={props.onUp}>
+      <circle r={16 * u} fill="transparent" />
+      <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={3 * u} fill={open ? '#ffffff' : '#1f4d2b'} stroke={hot ? '#2563eb' : '#0f172a'} strokeWidth={(hot ? 2.5 : 1.5) * u} />
+      <line x1={-2.6 * u} y1={-2.4 * u} x2={-2.6 * u} y2={2.4 * u} stroke={open ? '#0f172a' : '#ffffff'} strokeWidth={1.5 * u} strokeLinecap="round" />
+      <line x1={2.6 * u} y1={-2.4 * u} x2={2.6 * u} y2={2.4 * u} stroke={open ? '#0f172a' : '#ffffff'} strokeWidth={1.5 * u} strokeLinecap="round" />
     </g>
   );
 }

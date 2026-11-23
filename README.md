@@ -43,6 +43,17 @@ data model, phases and the decisions that need your review.
     curves** (rounded corners, on by default for ground stakes) while you draw. Bulbs are
     drawn as C9 glass, minis, stakes or icicle drops at real spacing.
   * **On bushes and trees**: net lights or a mini-light wrap; tap around the bush.
+  * **End to end**: start drawing on the open female at the end of a strand (✓ Plugs into
+    L01 end) and the new strand plugs into it. If a strand starts a gap away, plugging it
+    in adds a green extension cord sized to the next common length (6, 9, 15, 25, 40, 50,
+    100 ft) once the photo is measured. Turn that off in the photo's ⋯ menu.
+  * **Inline females**: select a zip cord or light string → **✂️ Add inline female** and
+    tap where it goes. Drag a female to slide it; tap an open one to plug a strand or a new
+    item into it (or remove it). Females keep what is plugged into them when renumbered.
+  * **Measure** offers common sizes: double garage door 16 ft, single 8–9 ft, front door
+    3 ft wide and 6 ft 8 in tall, a window often 3 ft (they vary from 2 to 4 ft). Lengths
+    from a photo are estimates: things nearer or farther than what you measured scale
+    differently, so measure before you buy.
 * **Christmas runs**: an **SPT-1 zip cord** or **C9 stringer** can have inline females
   (vampire plugs) plus one at the end. Set them in the details (Females on this run); plug
   into "tap 1", "tap 2"… or "end". Outlets have a **Location** (Front porch, Left side…)
