@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { PRESETS, type Preset, presetById, searchPresets } from '../presets/presets';
 import { getFavorites, getRecent, toggleFavorite } from '../presets/prefs';
 
@@ -10,13 +10,15 @@ interface Props {
   onDeleteCustom: (p: Preset) => void;
   /** What usually goes here (shown first). */
   suggested?: Preset[];
+  /** Shown above everything when the search is empty (e.g. "Start here" on a new photo). */
+  lead?: ReactNode;
   onPick: (preset: Preset) => void;
   onClose: () => void;
 }
 
 const finePointer = () => window.matchMedia('(pointer: fine)').matches;
 
-export function PresetPicker({ title, custom, onDeleteCustom, suggested = [], onPick, onClose }: Props) {
+export function PresetPicker({ title, custom, onDeleteCustom, suggested = [], lead, onPick, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [favs, setFavs] = useState(getFavorites);
   const recent = useMemo(() => getRecent().map((id) => presetById(id, custom)).filter((p): p is Preset => !!p), [custom]);
@@ -44,6 +46,7 @@ export function PresetPicker({ title, custom, onDeleteCustom, suggested = [], on
           {p.icon}
         </span>
         <span className="tile-name">{p.name}</span>
+        {p.hint && <span className="tile-hint">{p.hint}</span>}
       </button>
       {p.custom && key.startsWith('m-') && (
         <button type="button" className="tile-del" aria-label={`Remove my preset ${p.name}`} onClick={() => onDeleteCustom(p)}>
@@ -91,6 +94,7 @@ export function PresetPicker({ title, custom, onDeleteCustom, suggested = [], on
           aria-label="Search presets"
         />
         <div className="sheet-body">
+          {!query && lead}
           {!query && suggested.length > 0 && (
             <section>
               <h3>Suggested here</h3>

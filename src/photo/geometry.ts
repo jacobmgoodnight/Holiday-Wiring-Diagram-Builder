@@ -17,7 +17,7 @@ export function polylineLength(points: Pt[]): number {
 }
 
 /** Scale from a line drawn over something of known length. */
-export function feetPerPxFrom(a: Pt, b: Pt, feet: number, view: PhotoView): number | undefined {
+export function feetPerPxFrom(a: Pt, b: Pt, feet: number, view: Pick<PhotoView, 'width' | 'height'>): number | undefined {
   const px = polylineLength([toPx(a, view), toPx(b, view)]);
   return px > 0 && feet > 0 ? feet / px : undefined;
 }

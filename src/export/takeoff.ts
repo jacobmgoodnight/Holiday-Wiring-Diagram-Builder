@@ -28,7 +28,20 @@ export interface TakeoffOptions {
   onlyNew?: boolean;
 }
 
-const STYLE_NAME = { c9: 'C9/C7 lights', mini: 'Mini lights', icicle: 'Icicle lights', pixel: 'Pixels', pathway: 'Ground stake lights', plain: 'Lights' } as const;
+const STYLE_NAME = { c9: 'C9/C7 light strings', mini: 'Mini light strings', icicle: 'Icicle lights', pixel: 'Pixels', pathway: 'Ground stake lights', plain: 'Lights' } as const;
+
+/**
+ * A C9 stringer is bulk wire with sockets every few inches, cut to length, with bulbs and
+ * plugs bought separately; pre-made C9 strings come with bulbs and plugs on both ends.
+ */
+export function isStringer(node: Pick<DisplayNode, 'category' | 'label'>): boolean {
+  return node.category === 'c9' && /\b(stringer|spool|bulk)\b/i.test(node.label);
+}
+
+/** Common stringer spool lengths. */
+const SPOOLS_FT = [25, 50, 100, 250, 500, 1000];
+/** Bulbs per pre-made string: 25 for C9/C7 sets, 100 for mini strings. */
+const PER_STRING: Partial<Record<keyof typeof STYLE_NAME, number>> = { c9: 25, mini: 100 };
 const EXTRA_NAMES: Record<string, string> = { '#ffd60a': 'Yellow', '#ff6fb5': 'Pink' };
 
 export function colorName(c: string): string {
@@ -66,7 +79,19 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
   const onBush = (n: DisplayNode) => (display.views ?? []).some((v) => n.placements?.[v.id]?.kind === 'area');
 
   // Lights along the house, by type, colours and spacing.
-  type RunGroup = { item: string; ft: number; approx: boolean; bulbs: number; perColor: Map<string, number>; missing: string[]; ids: string[]; separateBulbs: boolean };
+  type RunGroup = {
+    item: string;
+    style: keyof typeof STYLE_NAME;
+    stringer: boolean;
+    ft: number;
+    approx: boolean;
+    bulbs: number;
+    perColor: Map<string, number>;
+    missing: string[];
+    ids: string[];
+    /** Stringers: female ends and inline females to fit. */
+    females: number;
+  };
   const runs = new Map<string, RunGroup>();
   // Bushes and trees: one line each.
   const bushes: TakeoffLine[] = [];
@@ -100,8 +125,10 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
       const style = runStyle(n);
       const colors = bulbColors(n);
       const spacing = spacingInOf(n);
-      const item = `${STYLE_NAME[style]} · ${colorsName(colors)} · ${spacing}″ apart`;
-      const g: RunGroup = runs.get(item) ?? { item, ft: 0, approx: false, bulbs: 0, perColor: new Map(), missing: [], ids: [], separateBulbs: style === 'c9' || style === 'pathway' };
+      const stringer = isStringer(n);
+      const item = stringer ? `C9 stringer · ${colorsName(colors)} · sockets ${spacing}″ apart` : `${STYLE_NAME[style]} · ${colorsName(colors)} · ${spacing}″ apart`;
+      const g: RunGroup = runs.get(item) ?? { item, style, stringer, ft: 0, approx: false, bulbs: 0, perColor: new Map(), missing: [], ids: [], females: 0 };
+      if (stringer && n.outputs !== undefined) g.females += n.outputs;
       const len = lengthOf(display, n);
       g.ids.push(n.id);
       if (len) {
@@ -156,11 +183,20 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
       lines: [...runs.values()].map((g) => {
         const parts: string[] = [];
         if (g.ft > 0) {
-          if (g.separateBulbs) {
-            const split = g.perColor.size > 1 ? `: ${[...g.perColor].map(([c, k]) => `${k} ${colorName(c).toLowerCase()}`).join(', ')}` : '';
-            parts.push(`≈ ${plural(g.bulbs, 'bulb')}${split}`);
+          const split = g.perColor.size > 1 ? `: ${[...g.perColor].map(([c, k]) => `${k} ${colorName(c).toLowerCase()}`).join(', ')}` : '';
+          const buy = Math.ceil(g.ft * 1.1);
+          if (g.stringer) {
+            // Wire with sockets: bulbs, a male plug per run and the females are extra.
+            const spool = SPOOLS_FT.find((x) => x >= buy);
+            parts.push(`${plural(g.bulbs, 'bulb')} to buy${split}`);
+            parts.push(`wire ~${buy} ft with 10% for corners${spool ? ` (a ${spool} ft spool)` : ''}`);
+            parts.push(`${plural(g.ids.length - g.missing.length, 'male plug')}${g.females ? ` + ${plural(g.females, 'female')}` : ''}`);
+          } else {
+            const per = PER_STRING[g.style];
+            if (per) parts.push(`≈ ${plural(Math.ceil(g.bulbs / per), `string`)} of ${per} bulbs (${g.bulbs} bulbs)`);
+            else if (g.style === 'pathway') parts.push(`≈ ${plural(g.bulbs, 'stake')}${split}`);
+            parts.push(`buy ~${buy} ft with 10% for corners`);
           }
-          parts.push(`buy ~${Math.ceil(g.ft * 1.1)} ft with 10% for corners`);
         }
         if (g.missing.length) parts.push(`${plural(g.missing.length, 'run')} without a length (${g.missing.join(', ')})`);
         return { item: g.item, qty: g.ft > 0 ? fmtFt(g.ft, g.approx) : 'length not set', detail: parts.join(' · ') || undefined, ids: g.ids };

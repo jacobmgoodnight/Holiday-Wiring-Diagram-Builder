@@ -159,7 +159,7 @@ test('plug in on the photo draws the cable; lights take colours and spacing; bus
   if (isMobile) await page.keyboard.press('Escape');
 
   // Light a bush with net lights, then plug it in by tapping the outlet when asked.
-  await tap(page, 1500, 120); // empty sky: nothing selected
+  await tap(page, 100, 150); // empty sky: nothing selected
   await page.getByRole('button', { name: '✏️ Draw lights' }).click();
   await page.getByRole('button', { name: 'Light a bush with Net lights (bush)' }).click();
   await expect(page.locator('.photo-banner')).toContainText('Tap around the bush');
@@ -176,7 +176,7 @@ test('strands snap end to end, a gap gets a sized extension cord, and females sp
   await sampleHouse(page);
   // Measure the double garage door with the size chip.
   await page.getByRole('button', { name: /Measure/ }).click();
-  await expect(page.locator('.photo-banner')).toContainText('front door 3 ft wide');
+  await expect(page.locator('.photo-banner')).toContainText('front door (3 ft wide)');
   await tap(page, 1040, 760);
   await tap(page, 1340, 760);
   await page.getByRole('button', { name: 'Double garage door 16 ft' }).click();
@@ -184,7 +184,7 @@ test('strands snap end to end, a gap gets a sized extension cord, and females sp
   await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   const draw = async (points: (readonly [number, number])[]) => {
-    await tap(page, 1500, 120); // empty sky: nothing selected
+    await tap(page, 100, 150); // empty sky: nothing selected
     await page.getByRole('button', { name: '✏️ Draw lights' }).click();
     await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
     for (const [x, y] of points) await tap(page, x, y);
@@ -258,9 +258,9 @@ test('save the photo with its lights as a picture, and get a shopping list with 
   await page.getByRole('menuitem', { name: 'Shopping list…' }).click();
   const list = page.getByRole('dialog', { name: 'Shopping list' });
   const lights = list.getByRole('region', { name: 'Lights along the house' });
-  await expect(lights).toContainText('C9/C7 lights · Warm white · 12″ apart');
+  await expect(lights).toContainText('C9/C7 light strings · Warm white · 12″ apart');
   await expect(lights).toContainText('~24 ft');
-  await expect(lights).toContainText('≈ 25 bulbs');
+  await expect(lights).toContainText('(25 bulbs)');
   dl = page.waitForEvent('download');
   await list.getByRole('button', { name: 'Download CSV' }).click();
   file = await dl;
@@ -269,4 +269,76 @@ test('save the photo with its lights as a picture, and get a shopping list with 
   // An ID jumps to that item.
   await list.getByRole('button', { name: 'L01' }).click();
   await expect(page.getByRole('region', { name: 'Selected L01' })).toBeVisible();
+});
+
+test('a new photo walks you through measure, outlet, lights and plug in; looks are remembered; ends swap', async ({ page, isMobile }) => {
+  await sampleHouse(page);
+  const coach = page.getByRole('region', { name: 'Next step' });
+  await expect(coach).toContainText('Measure something you know');
+  // "+ Add item" on an empty photo starts with an outlet or measuring.
+  await page.getByRole('button', { name: '+ Add item' }).click();
+  const start = page.getByRole('region', { name: 'Start here' });
+  await expect(start.getByRole('button', { name: '🔌 Place O01 Outlet' })).toBeVisible();
+  await expect(start.getByRole('button', { name: '📏 Measure the photo' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // Two measurements: both are listed, with how well they agree; one can be removed.
+  await coach.getByRole('button', { name: '📏 Start measuring' }).click();
+  await tap(page, 1040, 760);
+  await tap(page, 1340, 760);
+  await page.getByRole('button', { name: 'Double garage door 16 ft' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: /Scale set/ }).click();
+  await tap(page, 625, 650);
+  await tap(page, 695, 650);
+  await page.getByRole('button', { name: 'Front door, wide 3 ft' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: /Scale set/ }).click();
+  const list = page.getByLabel('Measurements');
+  await expect(list).toContainText('Double garage door 16 ft');
+  await expect(list).toContainText('They differ by'); // the sample drawing is not to scale
+  await list.getByRole('button', { name: 'Remove measurement 2' }).click();
+  await expect(list).not.toContainText('Front door');
+  await page.locator('.photo-banner').getByRole('button', { name: 'Cancel' }).click();
+
+  // Outlet, then lights, from the guide.
+  await expect(coach).toContainText('Put your outlets on the photo');
+  await coach.getByRole('button', { name: '🔌 Place O01' }).click();
+  await tap(page, 600, 700);
+  await tap(page, 100, 150);
+  await coach.getByRole('button', { name: '✏️ Draw your lights' }).click();
+  await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+  for (const [x, y] of [[260, 430], [650, 190]] as const) await tap(page, x, y);
+  if (isMobile) await page.getByRole('button', { name: /Style/ }).click();
+  await page.getByLabel('Bulb colors').selectOption('red');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.locator('.photo-banner').getByRole('button', { name: 'Later' }).click();
+  await tap(page, 100, 150);
+  await expect(coach).toContainText('L01 C9 roofline run is not plugged in yet');
+
+  // The next C9 starts red, like the last one.
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+  // The Style row stays open on a phone once opened.
+  const style = page.getByRole('button', { name: /Style/ });
+  await expect(style).toBeVisible();
+  if ((await style.getAttribute('aria-expanded')) === 'false') await style.click();
+  await expect(page.getByLabel('Bulb colors')).toHaveValue('red');
+  await page.locator('.photo-banner').getByRole('button', { name: 'Cancel' }).click();
+
+  // Swap the plug and the end of L01; undo puts it back.
+  await tap(page, 455, 310);
+  const plug = page.getByRole('img', { name: 'Plug end of L01' });
+  const before = (await plug.boundingBox())!;
+  await page.getByRole('region', { name: 'Selected L01' }).getByRole('button', { name: '⇄ Swap plug and end' }).click();
+  const photoH = (await page.locator('.photo-stage img').boundingBox())!.height;
+  // Now at the peak of the roof, about a quarter of the photo higher.
+  await expect.poll(async () => ((await plug.boundingBox())!.y - before.y) / photoH).toBeLessThan(-0.15);
+  await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
+  await expect.poll(async () => Math.abs((await plug.boundingBox())!.y - before.y)).toBeLessThan(3);
+
+  // Plug it in from the guide; once everything is set up the guide goes away.
+  await coach.getByRole('button', { name: '🔌 Plug it in' }).click();
+  await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
+  await expect(coach).toHaveCount(0);
 });

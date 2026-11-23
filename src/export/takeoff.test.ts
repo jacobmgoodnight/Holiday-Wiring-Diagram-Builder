@@ -33,14 +33,22 @@ describe('shopping list', () => {
     const s = takeoff(plan());
     const lights = s.find((x) => x.title === 'Lights along the house')!;
     expect(lights.lines[0]).toEqual({
-      item: 'C9/C7 lights · Warm white · 12″ apart',
+      item: 'C9/C7 light strings · Warm white · 12″ apart',
       qty: '~60 ft',
-      detail: '≈ 62 bulbs · buy ~66 ft with 10% for corners',
+      detail: '≈ 3 strings of 25 bulbs (62 bulbs) · buy ~66 ft with 10% for corners',
       ids: ['L01', 'L02'],
     });
-    // Multicolour C9s: bulbs by colour, in the order they repeat.
-    expect(lights.lines[1].item).toBe('C9/C7 lights · Multicolor · 12″ apart');
-    expect(lights.lines[1].detail).toBe('≈ 11 bulbs: 3 red, 2 green, 2 blue, 2 orange, 2 yellow · buy ~11 ft with 10% for corners');
+    expect(lights.lines[1].item).toBe('C9/C7 light strings · Multicolor · 12″ apart');
+  });
+
+  it('a C9 stringer is wire with sockets: bulbs by colour, a spool, plugs and females', () => {
+    let d = buildDisplay('O01 Porch\n  L01 Multicolor C9 stringer 40ft\n  L02 Multicolor C9 stringer 20ft\n', { id: 's' }).display;
+    d = updateNode(d, 'L01', { outputs: 2 }).display; // one inline female + the end
+    d = updateNode(d, 'L02', { outputs: 1 }).display;
+    const line = takeoff(d)[0].lines[0];
+    expect(line.item).toBe('C9 stringer · Multicolor · sockets 12″ apart');
+    expect(line.qty).toBe('60 ft');
+    expect(line.detail).toBe('62 bulbs to buy: 14 red, 12 green, 12 blue, 12 orange, 12 yellow · wire ~66 ft with 10% for corners (a 100 ft spool) · 2 male plugs + 3 females');
   });
 
   it('lists bushes, zip cord females, cords by length, gear and props', () => {
@@ -66,7 +74,7 @@ describe('shopping list', () => {
 
   it('copies as text and CSV rows', () => {
     const s = takeoff(plan());
-    expect(takeoffText('Test', s)).toContain('Lights along the house\n- C9/C7 lights · Warm white · 12″ apart: ~60 ft (≈ 62 bulbs · buy ~66 ft with 10% for corners) [L01, L02]\n');
+    expect(takeoffText('Test', s)).toContain('Lights along the house\n- C9/C7 light strings · Warm white · 12″ apart: ~60 ft (≈ 3 strings of 25 bulbs (62 bulbs) · buy ~66 ft with 10% for corners) [L01, L02]\n');
     expect(takeoffRows(s)[0]).toEqual(['section', 'item', 'quantity', 'detail', 'ids']);
     expect(takeoffRows(s)).toContainEqual(['Extension cords', '25 ft green extension cord', '× 1', '', 'C01']);
   });

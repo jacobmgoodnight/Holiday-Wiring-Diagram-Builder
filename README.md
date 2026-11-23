@@ -31,7 +31,9 @@ data model, phases and the decisions that need your review.
 * **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
   drag it, or drag a preset from the palette onto a socket.
 * **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
-* **Photo** (top toggle): add a photo of your house (or the sample house), draw light runs
+* **Photo** (top toggle): a new photo shows the steps (Measure → Outlets → Lights → Plug in)
+  with a button for the next one; "+ Add item" starts with an outlet or measuring. ↶ ↷ undo
+  and redo on the photo. Add a photo of your house (or the sample house), draw light runs
   along the roofline, drop items where they go, and press 🌙 Night to preview. Measure a
   known length once and every run shows its feet and bulb count.
   * **+ Plug in** on a selected item puts the new item on the photo with its cord drawn
@@ -53,6 +55,16 @@ data model, phases and the decisions that need your review.
   * **📸 Save picture**: the photo with its lights drawn on, day or night, as a JPEG to keep
     or (on a phone) share. Lights only for family; add items, labels and cords for whoever
     helps install.
+  * New lights start with the **look you last chose** for that kind (C9s stay red if you
+    made them red); "Use this look on all" in an item's details makes them all match.
+  * **⇄ Swap plug and end** flips which end of a run is the plug (male) end; the plug shows
+    as a small plug icon on the selected run.
+  * **C9 roofline run vs C9 stringer**: pre-made strings come with bulbs and plugs; a
+    stringer is wire with sockets, cut to length, with bulbs, plugs and females bought
+    separately. The shopping list counts strings for one and a spool, bulbs by colour and
+    plugs for the other.
+  * **Measure** several things: they are combined into one scale and the photo says how well
+    they agree (a big difference usually means they are at different distances).
   * **Measure** offers common sizes: double garage door 16 ft, single 8–9 ft, front door
     3 ft wide and 6 ft 8 in tall, a window often 3 ft (they vary from 2 to 4 ft). Lengths
     from a photo are estimates: things nearer or farther than what you measured scale

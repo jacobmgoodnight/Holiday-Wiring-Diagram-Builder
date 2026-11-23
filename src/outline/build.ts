@@ -337,8 +337,10 @@ export function buildDisplay(text: string, options: BuildOptions = {}): BuildRes
     trailingBlank: trailingBlank || undefined,
     copiedFrom: previous?.display.copiedFrom,
     views: previous?.display.views,
+    lightLooks: previous?.display.lightLooks,
   };
   if (!display.views?.length) delete display.views;
+  if (!display.lightLooks) delete display.lightLooks;
   if (!display.trailingBlank) delete display.trailingBlank;
   if (!display.copiedFrom) delete display.copiedFrom;
   if (display.year === undefined) delete display.year;

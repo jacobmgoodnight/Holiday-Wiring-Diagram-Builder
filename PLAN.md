@@ -428,3 +428,32 @@ Decisions:
   you show people. Zip cord drawn along the house counts as wiring and shows with cords.
 * **D37. Multicolor means red, green, blue, orange, yellow** everywhere (the name and the
   palette now agree).
+
+## Photo guide round
+
+You asked for the first step on an empty photo to be an outlet or measuring, the difference
+between a C9 roofline run and a C9 stringer, remembering the last colours, a swap ends
+button, more accurate measuring, and what else is missing.
+
+* **Step guide** on each photo: Measure → Outlets → Lights → Plug in, with the next step's
+  button (place O01, draw lights, plug L03 in…). Measuring can be skipped; the strip can be
+  hidden (per photo, on this device). "+ Add item" opens with "Start here" (place the
+  outlet, measure the photo) until the photo has both.
+* **C9 strings vs stringers**: picker hints, and the shopping list counts 25-bulb strings
+  (bulbs included) for pre-made runs, and a spool, bulbs by colour, male plugs and females
+  for stringers (a C9 run named "stringer", "spool" or "bulk").
+* **Remembered looks** (`display.lightLooks`, model-only, per kind of light, bushes apart):
+  new lights from built-in presets take the last look chosen for their kind, while drawing
+  or in the plan; your own presets keep their colours. "Use this look on all N" matches them.
+* **Swap plug and end** reverses a drawn run; inline females keep their spots and renumber,
+  plugs move with their female. A plug icon marks the male end of the selected run.
+* **Several measurements** (`view.measures`): the scale is total feet over total pixels;
+  the banner lists them (remove any) and shows the spread, warning above 6%.
+* **Undo and redo** buttons on the photo; the message after a change no longer blocks taps.
+
+Decisions:
+
+* **D38. The guide points, it does not block.** Measuring is optional (Skip) because a photo
+  is useful without lengths; the steps stay visible until done or hidden.
+* **D39. A remembered look belongs to the display**, so it travels with backups and "Copy
+  for next year", and a different house keeps its own colours.

@@ -1,7 +1,8 @@
 import { type PointerEvent as RPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { prettyPort, toneOf } from '../diagram/layout';
 import type { Target } from '../model/actions';
-import type { Display, DisplayNode, Placement, PhotoView } from '../model/types';
+import type { Display, DisplayNode, Measure, Placement, PhotoView } from '../model/types';
+import { measureSpread } from './actions';
 import { iconFor } from '../presets/custom';
 import { TONE_COLORS } from '../diagram/svg';
 import {
@@ -15,7 +16,6 @@ import {
   bulbSpacingPx,
   cablePath,
   pointAlong,
-  feetPerPxFrom,
   footPx,
   nearestOnPolyline,
   nearestOpenSocket,
@@ -31,6 +31,7 @@ import {
   wiringLines,
 } from './geometry';
 import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
+import { lookFor } from './lightOpts';
 
 /** What the next tap on the photo does. */
 export type PhotoIntent =
@@ -73,7 +74,13 @@ interface Props {
   onFinishRun: (intent: PhotoIntent, points: Pt[], opts?: LightOpts, snap?: Target) => void;
   /** Add the new item to the plan without putting it on the photo. */
   onSkipPlacing?: (intent: PhotoIntent) => void;
-  onSetScale: (feetPerPx: number) => void;
+  /** Measure: a line over something of known length (several are combined). */
+  onAddMeasure: (m: Measure) => void;
+  onRemoveMeasure: (index: number) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onMovePlacement: (nodeId: string, placement: Placement) => void;
   /** Move intent: plug the moving item into the tapped one (into the nearest open female on a run). */
   onPlugInto: (nodeId: string, parentId: string, port?: string) => void;
@@ -111,6 +118,8 @@ export function PhotoEditor(props: Props) {
   xfRef.current = xf;
   const [draft, setDraft] = useState<Pt[]>([]); // fractions, for draw and scale
   const [feet, setFeet] = useState('');
+  /** What the measured line is, when picked from the size chips. */
+  const [refName, setRefName] = useState<string | undefined>();
   const [preview, setPreview] = useState<{ nodeId: string; placement: Placement } | null>(null);
   const [opts, setOpts] = useState<LightOpts | undefined>();
   /** Drawing started on an open female: the new run plugs in there. */
@@ -137,7 +146,13 @@ export function PhotoEditor(props: Props) {
     setDraft([]);
     setFeet('');
     setSnap(undefined);
-    setOpts(intent?.type === 'draw' && draftBase ? lightOptsOf(draftBase) : undefined);
+    setRefName(undefined);
+    // New lights start with the look last chosen for that kind, so the house stays matching.
+    setOpts(
+      intent?.type === 'draw' && draftBase
+        ? { ...lightOptsOf(draftBase), ...(intent.nodeId ? {} : lookFor(display, draftBase, !!(draftBase as { custom?: boolean }).custom)) }
+        : undefined,
+    );
   }, [intent]);
 
   // When the box changes size (details panel opens, phone rotates): re-fit if the photo was
@@ -361,11 +376,15 @@ export function PhotoEditor(props: Props) {
   const sockets = useMemo(() => {
     const all = intent?.type === 'move' || intent?.type === 'connect' || intent?.type === 'draw';
     const only = intent?.type === 'splice' ? intent.nodeId : !intent ? selectedId : undefined;
-    const out: { runId: string; spots: NonNullable<ReturnType<typeof runSocketSpots>> }[] = [];
+    const out: { runId: string; spots: NonNullable<ReturnType<typeof runSocketSpots>>; plug?: [Pt, Pt] }[] = [];
     for (const n of Object.values(live.nodes)) {
       if (!all && n.id !== only && !(wiring && !intent && n.kind === 'cord')) continue;
-      const spots = runSocketSpots(live, n.id, view);
-      if (spots?.length) out.push({ runId: n.id, spots });
+      const spots = runSocketSpots(live, n.id, view) ?? [];
+      const pl = n.placements?.[view.id];
+      // The plug (male) end of a run: its first point, pointing away from the run.
+      const shape = pl?.kind === 'path' ? shapePx(pl, view, n.smooth) : undefined;
+      const plug: [Pt, Pt] | undefined = shape && shape.length > 1 ? [shape[0], shape[1]] : undefined;
+      if (spots.length || plug) out.push({ runId: n.id, spots, plug });
     }
     return out;
   }, [live, view, intent, selectedId, wiring]);
@@ -387,6 +406,7 @@ export function PhotoEditor(props: Props) {
 
   const scalePx = intent?.type === 'scale' && draft.length === 2 ? drawPx : null;
   const scaleFeet = Number(feet);
+  const spread = view.measures ? measureSpread(view.measures, view) : undefined;
 
   const drawing = intent?.type === 'draw' ? intent : undefined;
   const draftNode = drawing && draftBase ? { ...draftBase, ...(opts ?? {}) } : undefined;
@@ -500,6 +520,7 @@ export function PhotoEditor(props: Props) {
               ) : null,
             )}
 
+            {sockets.map(({ runId, plug }) => plug && <MalePlug key={`plug-${runId}`} at={plug[0]} next={plug[1]} u={u} label={`Plug end of ${runId}`} />)}
             {sockets.map(({ runId, spots }) =>
               spots.map((sp) => {
                 const moving = tapPreview && tapPreview.runId === runId && tapPreview.index === sp.index;
@@ -538,6 +559,24 @@ export function PhotoEditor(props: Props) {
                 ))}
               </g>
             )}
+            {intent?.type === 'scale' &&
+              (view.measures ?? []).map((m, i) => {
+                const a = toPx(m.a, view);
+                const b = toPx(m.b, view);
+                const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+                const text = `${m.name ? `${m.name} ` : ''}${+m.ft.toFixed(2)} ft`;
+                return (
+                  <g key={`m${i}`} className="draft scale saved">
+                    <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} strokeWidth={2.5 * u} />
+                    <g transform={`translate(${mid[0]} ${mid[1] - 14 * u})`}>
+                      <rect x={-(text.length * 3.6 + 6) * u} y={-9 * u} width={(text.length * 7.2 + 12) * u} height={16 * u} rx={4 * u} fill="rgba(255,255,255,0.92)" stroke="#38bdf8" strokeWidth={u} />
+                      <text y={3.5 * u} fontSize={11 * u} textAnchor="middle" fill="#0f172a" fontWeight={700}>
+                        {text}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })}
             {intent?.type === 'scale' && drawPx.length > 0 && (
               <g className="draft scale">
                 <polyline points={drawPx.map((p) => p.join(',')).join(' ')} fill="none" strokeWidth={3 * u} />
@@ -548,9 +587,17 @@ export function PhotoEditor(props: Props) {
             )}
           </svg>
         </div>
-        <button type="button" className="photo-fit" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fit} aria-label="Fit photo">
-          Fit
-        </button>
+        <div className="photo-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+          <button type="button" onClick={props.onUndo} disabled={!props.canUndo} aria-label="Undo" title="Undo">
+            ↶
+          </button>
+          <button type="button" onClick={props.onRedo} disabled={!props.canRedo} aria-label="Redo" title="Redo">
+            ↷
+          </button>
+          <button type="button" className="photo-fit" onClick={fit} aria-label="Fit photo">
+            Fit
+          </button>
+        </div>
       </div>
 
       {intent && (
@@ -621,37 +668,87 @@ export function PhotoEditor(props: Props) {
               )}
             </>
           )}
-          {intent.type === 'scale' &&
-            (scalePx ? (
-              <form
-                className="scale-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const fpp = feetPerPxFrom(draft[0], draft[1], scaleFeet, view);
-                  if (fpp) props.onSetScale(fpp);
-                }}
-              >
-                <label>
-                  That line is{' '}
-                  <input autoFocus inputMode="decimal" aria-label="Length in feet" value={feet} onChange={(e) => setFeet(e.target.value)} size={4} /> ft
-                </label>
-                <button type="submit" className="primary" disabled={!(scaleFeet > 0)}>
-                  Save
-                </button>
-                <span className="measure-refs" role="group" aria-label="Common sizes">
-                  {MEASURE_REFS.map((r) => (
-                    <button key={r.name} type="button" className="chip" onClick={() => setFeet(String(r.ft))}>
-                      {r.name} {r.size}
-                    </button>
+          {intent.type === 'scale' && (
+            <>
+              {!!view.measures?.length && (
+                <span className="measure-list" aria-label="Measurements">
+                  Scale from{' '}
+                  {view.measures.map((m, i) => (
+                    <span key={i} className="chip measure-chip">
+                      {m.name ? `${m.name} ` : ''}
+                      {+m.ft.toFixed(2)} ft
+                      <button type="button" aria-label={`Remove measurement ${i + 1}`} onClick={() => props.onRemoveMeasure(i)}>
+                        ✕
+                      </button>
+                    </span>
                   ))}
+                  {spread !== undefined &&
+                    (spread <= 0.06 ? (
+                      <b className="snap-note"> ✓ They agree within {Math.max(1, Math.round(spread * 100))}%.</b>
+                    ) : (
+                      <b className="warn-note">
+                        {' '}
+                        ⚠ They differ by {Math.round(spread * 100)}%: things nearer or farther than your lights scale differently.
+                      </b>
+                    ))}
                 </span>
-              </form>
-            ) : (
-              <span>
-                Tap both ends of something you know the size of: a double garage door is 16 ft wide, a front door 3 ft wide
-                and 6 ft 8 in tall. Windows vary (often 3 ft, but 2 to 4 ft), so measure one if you can.
-              </span>
-            ))}
+              )}
+              {scalePx ? (
+                <form
+                  className="scale-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (scaleFeet > 0) props.onAddMeasure({ a: draft[0], b: draft[1], ft: scaleFeet, name: refName });
+                  }}
+                >
+                  <label>
+                    That line is{' '}
+                    <input
+                      autoFocus
+                      inputMode="decimal"
+                      aria-label="Length in feet"
+                      value={feet}
+                      onChange={(e) => {
+                        setFeet(e.target.value);
+                        setRefName(undefined);
+                      }}
+                      size={4}
+                    />{' '}
+                    ft
+                  </label>
+                  <button type="submit" className="primary" disabled={!(scaleFeet > 0)}>
+                    Save
+                  </button>
+                  <span className="measure-refs" role="group" aria-label="Common sizes">
+                    {MEASURE_REFS.map((r) => (
+                      <button
+                        key={r.name}
+                        type="button"
+                        className="chip"
+                        onClick={() => {
+                          setFeet(String(r.ft));
+                          setRefName(r.name);
+                        }}
+                      >
+                        {r.name} {r.size}
+                      </button>
+                    ))}
+                  </span>
+                </form>
+              ) : (
+                <span>
+                  {view.measures?.length
+                    ? 'Add another to check the scale: tap both ends of something else you know.'
+                    : 'Tap both ends of something you know the size of, like a double garage door (16 ft) or the front door (3 ft wide).'}{' '}
+                  <details className="measure-tips">
+                    <summary>Tips</summary>A front door is almost always 3 ft wide and 6 ft 8 in tall; a single garage door 8 or 9 ft.
+                    Windows vary (often 3 ft, but 2 to 4 ft). Most accurate: something long, on the same wall as your lights, in a
+                    photo taken straight on from across the street. Two measurements that agree mean you can trust the lengths.
+                  </details>
+                </span>
+              )}
+            </>
+          )}
           {intent.type === 'move' && (
             <span>
               Tap what <b>{intent.nodeId}</b> plugs into{intent.fresh ? ' to run its cord' : ''}. On a run, tap near the female it uses.
@@ -978,6 +1075,18 @@ export function Lights(props: LightsProps) {
             />
           );
         })}
+    </g>
+  );
+}
+
+/** The plug (male) end of a run: a plug body with two prongs pointing away from the run. */
+function MalePlug({ at, next, u, label }: { at: Pt; next: Pt; u: number; label: string }) {
+  const angle = (Math.atan2(at[1] - next[1], at[0] - next[0]) * 180) / Math.PI;
+  return (
+    <g className="male-plug" transform={`translate(${at[0]} ${at[1]}) rotate(${angle})`} pointerEvents="none" role="img" aria-label={label}>
+      <rect x={-6 * u} y={-5 * u} width={10 * u} height={10 * u} rx={2.5 * u} fill="#1f2937" stroke="#ffffff" strokeWidth={1.2 * u} />
+      <line x1={4 * u} y1={-2.4 * u} x2={9.5 * u} y2={-2.4 * u} stroke="#d1d5db" strokeWidth={1.8 * u} strokeLinecap="round" />
+      <line x1={4 * u} y1={2.4 * u} x2={9.5 * u} y2={2.4 * u} stroke="#d1d5db" strokeWidth={1.8 * u} strokeLinecap="round" />
     </g>
   );
 }

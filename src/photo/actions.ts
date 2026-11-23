@@ -1,8 +1,8 @@
 /** Photo view actions (pure). Placing items never changes their wiring. */
 import { type ActionResult, ActionError, type NewItem, type Target, addNode, replug, subtreeIds } from '../model/actions';
 import { inlineFemales, isRun, powerChildren, socketLabels } from '../model/graph';
-import type { Display, Placement, PhotoView } from '../model/types';
-import { cordFor, drawnAsRun, gapFt, plugPoint, runSocketSpots, tapPositions } from './geometry';
+import type { Display, Measure, Placement, PhotoView } from '../model/types';
+import { type Pt, cordFor, drawnAsRun, feetPerPxFrom, gapFt, plugPoint, runSocketSpots, tapPositions } from './geometry';
 
 const clone = (d: Display): Display => structuredClone(d);
 
@@ -182,4 +182,69 @@ export function plugOnPhoto(
     }
   }
   return replug(display, childId, target);
+}
+
+/**
+ * Swap a run's ends: the plug (male) end becomes the far end and the end female moves to
+ * where the plug was. Inline females keep their spots and renumber from the new plug end.
+ */
+export function swapEnds(display: Display, runId: string, viewId: string): ActionResult {
+  const node = display.nodes[runId];
+  const placement = node?.placements?.[viewId];
+  if (!placement || placement.kind !== 'path') throw new ActionError(`Draw ${runId} on this photo first`);
+  let d = display;
+  if (isRun(node) && node.outputs !== undefined && inlineFemales(node) > 0) {
+    const positions = tapPositions(placement, inlineFemales(node));
+    d = arrangeTaps(display, runId, viewId, positions.map((p, i) => ({ along: 1 - p, old: `tap${i + 1}` }))).display;
+  } else d = structuredClone(display);
+  const pl = d.nodes[runId].placements![viewId];
+  if (pl.kind === 'path') pl.points = [...pl.points].reverse();
+  return { display: d, nodeId: runId };
+}
+
+// ---- Measuring: several measurements make a steadier scale
+
+/** Feet per pixel from all measurements: total feet over total pixels (long ones count more). */
+export function scaleFrom(measures: Measure[], view: Pick<PhotoView, 'width' | 'height'>): number | undefined {
+  let ft = 0;
+  let px = 0;
+  for (const m of measures) {
+    const fpp = feetPerPxFrom(m.a as Pt, m.b as Pt, m.ft, view);
+    if (!fpp) continue;
+    ft += m.ft;
+    px += m.ft / fpp;
+  }
+  return px > 0 ? ft / px : undefined;
+}
+
+/** How far apart the measurements are (0.04 = they agree within 4%), or undefined for one. */
+export function measureSpread(measures: Measure[], view: Pick<PhotoView, 'width' | 'height'>): number | undefined {
+  const scales = measures.map((m) => feetPerPxFrom(m.a as Pt, m.b as Pt, m.ft, view)).filter((x): x is number => !!x);
+  if (scales.length < 2) return undefined;
+  const mean = scales.reduce((a, b) => a + b, 0) / scales.length;
+  return (Math.max(...scales) - Math.min(...scales)) / mean;
+}
+
+/** Add a measurement; the photo's scale becomes the combination of all of them. */
+export function addMeasure(display: Display, viewId: string, m: Measure): ActionResult {
+  const d = clone(display);
+  const v = d.views?.find((x) => x.id === viewId);
+  if (!v) throw new ActionError('That photo is no longer here');
+  if (!feetPerPxFrom(m.a as Pt, m.b as Pt, m.ft, v)) throw new ActionError('Tap two different spots and give a length in feet');
+  v.measures = [...(v.measures ?? []), m];
+  v.feetPerPx = scaleFrom(v.measures, v);
+  return { display: d };
+}
+
+/** Take a measurement back out (the last one gone clears the scale). */
+export function removeMeasure(display: Display, viewId: string, index: number): ActionResult {
+  const d = clone(display);
+  const v = d.views?.find((x) => x.id === viewId);
+  if (!v?.measures?.[index]) throw new ActionError('That measurement is no longer here');
+  v.measures = v.measures.filter((_, i) => i !== index);
+  if (!v.measures.length) {
+    delete v.measures;
+    delete v.feetPerPx;
+  } else v.feetPerPx = scaleFrom(v.measures, v);
+  return { display: d };
 }

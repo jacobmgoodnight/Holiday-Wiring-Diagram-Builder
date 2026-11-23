@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import type { Display, Placement, PhotoView } from '../model/types';
+import { homeLink } from '../model/actions';
+import type { Display, Measure, Placement, PhotoView } from '../model/types';
 import { iconFor } from '../presets/custom';
 import { PRESETS } from '../presets/presets';
 import { Sheet } from '../ui/Sheet';
@@ -34,7 +35,12 @@ interface Props {
   onSkipPlacing: (intent: PhotoIntent) => void;
   /** The item or preset being drawn, for the live preview and its light options. */
   draftBase?: LightNode;
-  onSetScale: (feetPerPx: number) => void;
+  onAddMeasure: (m: Measure) => void;
+  onRemoveMeasure: (index: number) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onMovePlacement: (nodeId: string, placement: Placement) => void;
   onPlugInto: (nodeId: string, parentId: string, port?: string) => void;
   onConnect: (intent: Extract<PhotoIntent, { type: 'connect' }>, childId: string) => void;
@@ -180,7 +186,12 @@ export function PhotoPane(props: Props) {
         onPlacePoint={props.onPlacePoint}
         onFinishRun={props.onFinishRun}
         onSkipPlacing={props.onSkipPlacing}
-        onSetScale={props.onSetScale}
+        onAddMeasure={props.onAddMeasure}
+        onRemoveMeasure={props.onRemoveMeasure}
+        canUndo={props.canUndo}
+        canRedo={props.canRedo}
+        onUndo={props.onUndo}
+        onRedo={props.onRedo}
         onMovePlacement={props.onMovePlacement}
         onPlugInto={props.onPlugInto}
         onConnect={props.onConnect}
@@ -195,6 +206,17 @@ export function PhotoPane(props: Props) {
         fitKey={props.fitKey}
       />
 
+      {!props.intent && !props.hideActions && (
+        <Coach
+          key={view.id}
+          display={display}
+          view={view}
+          onMeasure={() => props.setIntent({ type: 'scale' })}
+          onOutlet={(id) => props.setIntent(id ? { type: 'place', nodeId: id, name: `${id} ${display.nodes[id].label}` } : { type: 'place', presetId: 'outlet', name: 'Outlet' })}
+          onLights={() => setSheet('draw')}
+          onPlug={(id) => props.setIntent({ type: 'move', nodeId: id, fresh: true })}
+        />
+      )}
       {!props.intent && !props.hideActions && (
         <div className="photo-actions">
           <button type="button" className="primary" onClick={props.onAddItem}>
@@ -248,6 +270,7 @@ export function PhotoPane(props: Props) {
                         {p.icon}
                       </span>
                       <span className="tile-name">{p.name}</span>
+                      {p.hint && <span className="tile-hint">{p.hint}</span>}
                     </button>
                   </div>
                 ))}
@@ -284,6 +307,85 @@ export function PhotoPane(props: Props) {
           </ul>
         </Sheet>
       )}
+    </div>
+  );
+}
+
+const COACH_KEY = 'wiring-sketchpad.coach';
+const STEPS = ['Measure', 'Outlets', 'Lights', 'Plug in'];
+
+/** What to do next on this photo, or undefined once it is all set up. */
+export function nextPhotoStep(display: Display, view: PhotoView, skipMeasure = false): { step: number; text: string; action: string; nodeId?: string } | undefined {
+  const onPhoto = Object.values(display.nodes).filter((n) => n.placements?.[view.id]);
+  if (!view.feetPerPx && !skipMeasure)
+    return { step: 0, text: 'Measure something you know (a garage door, the front door) so lengths, bulbs and cords come out right.', action: '📏 Start measuring' };
+  if (!onPhoto.some((n) => n.kind === 'outlet')) {
+    const waiting = Object.values(display.nodes).find((n) => n.kind === 'outlet' && !n.placements?.[view.id]);
+    return { step: 1, text: 'Put your outlets on the photo: everything plugs into one.', action: waiting ? `🔌 Place ${waiting.id}` : '🔌 Add an outlet', nodeId: waiting?.id };
+  }
+  if (!onPhoto.some((n) => drawnAsRun(n))) return { step: 2, text: 'Draw your lights along the house, or outline a bush.', action: '✏️ Draw your lights' };
+  const loose = onPhoto.find((n) => n.kind !== 'outlet' && !homeLink(display, n.id));
+  if (loose) return { step: 3, text: `${loose.id} ${loose.label} is not plugged in yet.`, action: '🔌 Plug it in', nodeId: loose.id };
+  return undefined;
+}
+
+function readCoach(): Record<string, string[]> {
+  try {
+    return JSON.parse(localStorage.getItem(COACH_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Getting started on a photo: measure, outlets, lights, plug in. Points at the next step
+ * with a button for it; measuring can be skipped and the whole strip hidden (per photo).
+ */
+function Coach(props: { display: Display; view: PhotoView; onMeasure: () => void; onOutlet: (id?: string) => void; onLights: () => void; onPlug: (id: string) => void }) {
+  const { display, view } = props;
+  const key = `${display.id}:${view.id}`;
+  const [flags, setFlags] = useState<string[]>(() => readCoach()[key] ?? []);
+  const set = (flag: string) => {
+    const next = [...new Set([...flags, flag])];
+    setFlags(next);
+    try {
+      localStorage.setItem(COACH_KEY, JSON.stringify({ ...readCoach(), [key]: next }));
+    } catch {
+      // private mode: hidden for this visit only
+    }
+  };
+  if (flags.includes('hidden')) return null;
+  const next = nextPhotoStep(display, view, flags.includes('skip-measure'));
+  if (!next) return null;
+  const act = () => {
+    if (next.step === 0) props.onMeasure();
+    else if (next.step === 1) props.onOutlet(next.nodeId);
+    else if (next.step === 2) props.onLights();
+    else if (next.nodeId) props.onPlug(next.nodeId);
+  };
+  return (
+    <div className="coach" role="region" aria-label="Next step">
+      <ol className="coach-steps">
+        {STEPS.map((name, i) => (
+          <li key={name} className={i < next.step ? 'done' : i === next.step ? 'cur' : ''} aria-current={i === next.step ? 'step' : undefined}>
+            <span aria-hidden="true">{i < next.step ? '✓' : i + 1}</span> {name}
+          </li>
+        ))}
+      </ol>
+      <div className="coach-next">
+        <span>{next.text}</span>
+        <button type="button" className="primary" onClick={act}>
+          {next.action}
+        </button>
+        {next.step === 0 && (
+          <button type="button" onClick={() => set('skip-measure')}>
+            Skip
+          </button>
+        )}
+        <button type="button" className="coach-hide" aria-label="Hide these steps" title="Hide these steps" onClick={() => set('hidden')}>
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

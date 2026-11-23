@@ -3,7 +3,7 @@ import { iconFor } from '../presets/custom';
 import type { NodePatch } from '../model/actions';
 import { inlineFemales, isRun } from '../model/graph';
 import { bulbCount, drawnAsLights, runStyle } from '../photo/geometry';
-import { LightOptions, lightOptsOf, lightPatch } from '../photo/LightOptions';
+import { type LightOpts, LightOptions, lightOptsOf } from '../photo/LightOptions';
 import type { DisplayNode, NodeKind, Status } from '../model/types';
 import { NODE_KINDS, STATUSES } from '../model/types';
 
@@ -28,6 +28,12 @@ interface Props {
   /** Delete it together with everything plugged into it. */
   onDeleteBranch: () => void;
   onSaveAsPreset: (name: string, icon: string) => void;
+  /** Lights: a new look for this item (remembered for the next one of its kind). */
+  onLook: (opts: LightOpts) => void;
+  /** Lights of the same kind in the plan, this one included. */
+  sameKindCount: number;
+  /** Give all of them this look. */
+  onLookAll: (opts: LightOpts) => void;
 }
 
 /** Text/number input that commits on blur or Enter; re-keyed when the stored value changes. */
@@ -140,7 +146,7 @@ const numOrUndef = (v: string): number | undefined | null => {
 };
 
 /** Details of the selected item. Its main actions live in the selection bar. */
-export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onDeleteBranch, onSaveAsPreset }: Props) {
+export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onDeleteBranch, onSaveAsPreset, onLook, sameKindCount, onLookAll }: Props) {
   const [saving, setSaving] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [presetIcon, setPresetIcon] = useState('');
@@ -198,7 +204,12 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
       {look && (
         <section className="lights-section" aria-label="Lights">
           <h3>Lights</h3>
-          <LightOptions value={look} onChange={(patch) => onPatch(lightPatch(node, { ...look, ...patch }))} />
+          <LightOptions value={look} onChange={(patch) => onLook({ ...look, ...patch })} />
+          {sameKindCount > 1 && (
+            <button type="button" className="look-all" onClick={() => onLookAll(look)}>
+              Use this look on all {sameKindCount} {runStyle(node) === 'c9' ? 'C9/C7 lights' : 'lights like this'}
+            </button>
+          )}
           {node.lengthFt !== undefined && node.lengthFt > 0 && (
             <p className="muted small">
               ≈ {bulbCount(node.lengthFt, look.spacingIn)} bulbs over {node.lengthFt} ft at {look.spacingIn}″ spacing.

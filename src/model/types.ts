@@ -193,6 +193,28 @@ export interface Display {
   copiedFrom?: string;
   /** Photos of the house that items are placed on. */
   views?: PhotoView[];
+  /**
+   * The light look last chosen for each kind of light (e.g. "c9", "icicle:bush"), so new
+   * runs match the rest of the house (model-only).
+   */
+  lightLooks?: Record<string, LightLook>;
+}
+
+/** Bulb colours, spacing, wire colour and smoothing chosen for a kind of light. */
+export interface LightLook {
+  bulbColors?: string[];
+  spacingIn?: number;
+  wireColor?: string;
+  smooth?: boolean;
+}
+
+/** One "Measure": a line on the photo over something of known length. */
+export interface Measure {
+  a: [number, number];
+  b: [number, number];
+  ft: number;
+  /** What was measured, e.g. "Double garage door". */
+  name?: string;
 }
 
 /**
@@ -208,6 +230,8 @@ export interface PhotoView {
   height: number;
   /** Real-world feet per photo pixel, from "Measure" (undefined until set). */
   feetPerPx?: number;
+  /** The measurements behind feetPerPx; several are combined for a steadier scale. */
+  measures?: Measure[];
 }
 
 export type Placement =

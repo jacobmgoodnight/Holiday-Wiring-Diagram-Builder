@@ -21,6 +21,8 @@ export interface Preset {
   keywords?: string;
   /** Saved by you with "Save as preset" (stored in this browser). */
   custom?: boolean;
+  /** One line under the name in the picker, e.g. what sets two similar presets apart. */
+  hint?: string;
   /** Runs: whether the last socket is a female at the end (default yes). */
   endFemale?: boolean;
   /** Light runs: bulb colours, spacing (inches), smooth curve on the photo, wire colour. */
@@ -46,8 +48,8 @@ export const PRESETS: Preset[] = [
   { id: 'controller', name: 'Controller', icon: '🎛️', group: 'power', kind: 'controller', label: 'WLED controller', keywords: 'esp32 wled falcon' },
   { id: 'tote', name: 'Tote', icon: '📦', group: 'power', kind: 'enclosure', label: 'Tote', keywords: 'enclosure box bin' },
 
-  { id: 'c9', name: 'C9 roofline run', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 roofline run', outputs: 1, spacingIn: 12, keywords: 'c7 bulbs eaves gutter stringer' },
-  { id: 'c9stringer', name: 'C9 stringer (SPT-1 + sockets)', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 stringer', outputs: 1, spacingIn: 12, keywords: 'spt-1 spt1 sockets commercial build your own roofline inline female' },
+  { id: 'c9', name: 'C9 roofline run', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 roofline run', outputs: 1, spacingIn: 12, hint: 'Pre-made strings: bulbs and plugs included', keywords: 'c7 bulbs eaves gutter stringer' },
+  { id: 'c9stringer', name: 'C9 stringer (SPT-1 + sockets)', icon: '💡', group: 'load', kind: 'load', category: 'c9', label: 'C9 stringer', outputs: 1, spacingIn: 12, hint: 'Wire with sockets, cut to length; bulbs separate', keywords: 'spt-1 spt1 sockets commercial build your own roofline inline female' },
   { id: 'mini', name: 'Mini-light string', icon: '✨', group: 'load', kind: 'load', category: 'mini', label: 'Mini lights', outputs: 1, spacingIn: 4, keywords: 'string fairy end to end' },
   { id: 'icicle', name: 'Icicle lights', icon: '🧊', group: 'load', kind: 'load', category: 'icicle', label: 'Icicle lights', outputs: 1, spacingIn: 4, keywords: 'drops eaves' },
   { id: 'net', name: 'Net lights (bush)', icon: '🌳', group: 'load', kind: 'load', category: 'icicle', label: 'Net lights', outputs: 1, spacingIn: 4, keywords: 'bush shrub hedge net' },

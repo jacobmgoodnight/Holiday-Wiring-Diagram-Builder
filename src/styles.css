@@ -386,7 +386,8 @@ button.danger { color: var(--err); }
 .photo-banner { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 3; width: max-content; max-width: calc(100% - 24px); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 8px 10px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.25); font-size: 0.92rem; }
 .scale-form { display: flex; gap: 8px; align-items: center; }
 .scale-form input { min-height: 40px; width: 5em; font: inherit; font-size: 16px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
-.photo-fit { position: absolute; top: 10px; right: 10px; z-index: 2; min-height: 38px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
+.photo-tools { position: absolute; top: 10px; right: 10px; z-index: 2; display: flex; gap: 6px; }
+.photo-tools button { min-height: 38px; min-width: 38px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
 .photo-actions { flex: none; display: flex; gap: 8px; padding: 8px; overflow-x: auto; background: var(--panel); border-top: 1px solid var(--line); }
 .photo-actions button { flex: none; min-height: 44px; }
 .photo-empty { align-items: center; justify-content: center; padding: 16px; }
@@ -412,7 +413,6 @@ button.big { min-height: 52px; font-size: 1rem; }
 .photo { display: flex; flex-direction: column; }
 .photo-box { position: relative; inset: auto; flex: 1; min-height: 0; }
 .photo-banner { position: static; order: -1; transform: none; width: auto; max-width: none; border-radius: 0; border-width: 0 0 1px; box-shadow: none; justify-content: flex-start; padding: 6px 10px; }
-.photo-fit { top: 10px; }
 
 /* Christmas lights round: light options, run females, outlet location, bushes */
 .light-opts { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; width: 100%; }
@@ -523,3 +523,31 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 .picture-wait { color: #cbd5e1; padding: 24px; }
 .picture-opts { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 10px; }
 .picture-opts .seg button { min-height: 40px; }
+
+/* Photo guide round */
+.tile-hint { font-size: 0.68rem; line-height: 1.15; color: var(--muted); }
+.coach { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+.coach-steps { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 0.78rem; color: var(--muted); }
+.coach-steps li { flex: 1; text-align: center; padding: 3px 4px; border-radius: 999px; background: var(--bg); white-space: nowrap; }
+.coach-steps li.done { color: var(--ok, #15803d); }
+.coach-steps li.cur { background: var(--accent); color: #fff; font-weight: 600; }
+.coach-next { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; }
+.coach-next span { flex: 1 1 220px; }
+.coach-next button { min-height: 40px; }
+.coach-hide { min-width: 40px; }
+.measure-list { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; width: 100%; font-size: 0.85rem; }
+.measure-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 4px 0 10px; font-size: 0.8rem; }
+.measure-chip button { min-height: 26px; min-width: 26px; padding: 0; border: 0; background: transparent; }
+.warn-note { color: var(--warn, #b45309); }
+.draft.scale.saved line { stroke: #38bdf8; stroke-dasharray: 6 4; }
+.start-here { margin-bottom: 6px; }
+.start-here p { margin: 0 0 8px; }
+.start-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.start-row button { min-height: 44px; }
+.look-all { margin-top: 8px; min-height: 38px; font-size: 0.85rem; }
+.measure-tips { display: inline; }
+.measure-tips summary { display: inline; cursor: pointer; color: var(--accent); }
+.measure-tips[open] { display: block; margin-top: 4px; font-size: 0.85rem; color: var(--muted); }
+/* The message after a change never blocks taps on the photo; only its Undo button is live. */
+.toast { pointer-events: none; }
+.toast button { pointer-events: auto; }

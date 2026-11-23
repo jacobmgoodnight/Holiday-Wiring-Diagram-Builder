@@ -6,7 +6,21 @@ import { copyForNextYear } from '../model/season';
 import type { PhotoView } from '../model/types';
 import { buildDisplay } from '../outline/build';
 import { syncFromModel } from '../outline/sync';
-import { addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeView, setPlacement, spliceFemale, updateView } from './actions';
+import {
+  addMeasure,
+  addPlacedNode,
+  addView,
+  measureSpread,
+  moveFemale,
+  plugOnPhoto,
+  removeFemale,
+  removeMeasure,
+  removeView,
+  setPlacement,
+  spliceFemale,
+  swapEnds,
+  updateView,
+} from './actions';
 import {
   type Pt,
   areaBulbs,
@@ -30,7 +44,7 @@ import {
   unplaced,
   wiringLines,
 } from './geometry';
-import { lightOptsOf, lightPatch } from './lightOpts';
+import { applyLookToAll, lightOptsOf, lightPatch, lookKey, rememberLook, withLook } from './lightOpts';
 
 const halloween = readFileSync(new URL('../../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 const view: PhotoView = { id: 'v1', name: 'Front', photoId: 'p1', width: 2000, height: 1000 };
@@ -346,5 +360,57 @@ describe('inline females and cords on the photo', () => {
     m = setPlacement(m, 'O01', 'v1', { kind: 'point', x: 0.1, y: 0.5 }).display;
     m = setPlacement(m, 'L01', 'v1', { kind: 'point', x: 0.8, y: 0.9 }).display;
     expect(plugOnPhoto(m, m.views![0], 'L01', { parent: 'O01' }).cordId).toBeUndefined();
+  });
+});
+
+describe('swapping ends, measuring, remembered looks', () => {
+  it('swaps the plug and female ends; inline females keep their spots and renumber', () => {
+    let d = addView(buildDisplay('O01 Porch\n  C01 SPT-1 zip cord\n    Wreath\n', { id: 'x' }).display, view).display;
+    d = updateNode(d, 'C01', { outputs: 3 }).display;
+    d = setPlacement(d, 'C01', 'v1', { kind: 'path', points: [[0.1, 0.2], [0.5, 0.2]], taps: [0.25, 0.6] }).display;
+    const r = swapEnds(d, 'C01', 'v1').display;
+    const pl = r.nodes.C01.placements!.v1;
+    expect(pl).toMatchObject({ points: [[0.5, 0.2], [0.1, 0.2]] });
+    expect((pl as { taps: number[] }).taps.map((t) => +t.toFixed(2))).toEqual([0.4, 0.75]);
+    // The wreath was on tap1 (nearest the old plug end); that female is now tap2.
+    expect(r.links.find((l) => l.to === 'L01')?.port).toBe('tap2');
+    expect(runSocketSpots(r, 'C01', view)!.find((x) => x.port === 'end')!.at).toEqual([200, 200]);
+  });
+
+  it('combines several measurements and says how well they agree', () => {
+    let d = addMeasure(base(), 'v1', { a: [0.1, 0.5], b: [0.2, 0.5], ft: 10, name: 'Garage door' }).display; // 200 px
+    expect(d.views![0].feetPerPx).toBeCloseTo(0.05);
+    d = addMeasure(d, 'v1', { a: [0.5, 0.5], b: [0.55, 0.5], ft: 5.5 }).display; // 100 px: 0.055
+    expect(d.views![0].feetPerPx).toBeCloseTo(15.5 / 300);
+    expect(measureSpread(d.views![0].measures!, view)).toBeCloseTo(0.005 / 0.0525);
+    d = removeMeasure(d, 'v1', 0).display;
+    expect(d.views![0].feetPerPx).toBeCloseTo(0.055);
+    d = removeMeasure(d, 'v1', 0).display;
+    expect(d.views![0].feetPerPx).toBeUndefined();
+    expect(() => addMeasure(base(), 'v1', { a: [0.1, 0.5], b: [0.1, 0.5], ft: 10 })).toThrow();
+  });
+
+  it('new lights of a kind take the look last chosen for it', () => {
+    const red = { bulbColors: ['#ff3b30'], spacingIn: 8, smooth: false, wireColor: 'white' };
+    const d = rememberLook(base(), { label: 'C9 roofline run', category: 'c9' }, red);
+    expect(lookKey({ label: 'Net lights', category: 'icicle' })).toBe('icicle:bush');
+    const item = withLook(d, { kind: 'load' as const, label: 'C9 roofline run', category: 'c9' as const, spacingIn: 12 });
+    expect(item).toMatchObject({ bulbColors: ['#ff3b30'], spacingIn: 8, wireColor: 'white' });
+    // Your own preset keeps its colours.
+    expect(lightOptsOf(withLook(d, { kind: 'load' as const, label: 'C9', category: 'c9' as const, bulbColors: ['#3a8bff'] }, true)).bulbColors).toEqual(['#3a8bff']);
+    // A different kind of light is not affected.
+    expect(lightOptsOf(withLook(d, { kind: 'load' as const, label: 'Mini lights', category: 'mini' as const })).bulbColors).toEqual(['#ffcf6e']);
+  });
+
+  it('can give every light of a kind the same look', () => {
+    let d = buildDisplay('O01 Porch\n  L01 C9 roofline run\n  L02 Red C9 roofline run\n  L03 Mini lights\n', { id: 'x' }).display;
+    d = applyLookToAll(d, d.nodes.L01, { bulbColors: ['#3a8bff'], spacingIn: 12, smooth: false, wireColor: 'green' });
+    expect(d.nodes.L01.bulbColors).toEqual(['#3a8bff']);
+    expect(d.nodes.L02.bulbColors).toEqual(['#3a8bff']);
+    expect(d.nodes.L03.bulbColors).toBeUndefined();
+    expect(d.lightLooks?.c9?.bulbColors).toEqual(['#3a8bff']);
+    // The remembered look survives a text edit.
+    const synced = syncFromModel(d);
+    expect(synced.result.display.lightLooks?.c9?.bulbColors).toEqual(['#3a8bff']);
   });
 });

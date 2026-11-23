@@ -25,7 +25,7 @@ import { displayStats, isRun } from './model/graph';
 import { type Direction, navigate, parentOf } from './model/navigate';
 import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
-import type { Display, NodeKind, Placement } from './model/types';
+import type { Display, DisplayNode, NodeKind, Placement } from './model/types';
 import { type BuildResult, buildDisplay } from './outline';
 import { syncFromModel } from './outline/sync';
 import { presetFromNode, presetText, suggest } from './presets/custom';
@@ -64,9 +64,10 @@ import { SelectionBar } from './ui/SelectionBar';
 import { ShoppingSheet } from './ui/ShoppingSheet';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
-import { addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeView, setPlacement, spliceFemale, updateView } from './photo/actions';
+import { addMeasure, addPlacedNode, addView, moveFemale, plugOnPhoto, removeFemale, removeMeasure, removeView, setPlacement, spliceFemale, swapEnds } from './photo/actions';
 import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt } from './photo/geometry';
 import { type LightOpts, lightPatch } from './photo/LightOptions';
+import { applyLookToAll, rememberLook, sameKind, withLook } from './photo/lightOpts';
 import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
 import type { LightNode, PhotoIntent } from './photo/PhotoEditor';
 import { PhotoPane } from './photo/PhotoPane';
@@ -432,7 +433,7 @@ export function App() {
     if (!preset.id.startsWith('like:')) noteUsed(preset.id);
     act(
       // In a copy of last year's display, anything added is new this year.
-      (d) => addNode(d, { ...preset, isNew: d.copiedFrom ? true : undefined }, target),
+      (d) => addNode(d, withLook(d, { ...preset, isNew: d.copiedFrom ? true : undefined }, !!preset.custom), target),
       (r, next) => reveal(r.nodeId, next),
     );
   };
@@ -796,6 +797,10 @@ export function App() {
   const photoIntentFor = (p: Preset, target?: Target): PhotoIntent =>
     drawnAsRun(p) ? { type: 'draw', presetId: p.id, name: p.name, target, area: drawnAsLights(p) && drawsAsArea(p) } : { type: 'place', presetId: p.id, name: p.name, target };
 
+  /** Remember the look chosen for a kind of light, so the next one matches. */
+  const remembered = (r: ActionResult, node: Pick<DisplayNode, 'kind' | 'label' | 'category'>, opts?: LightOpts): ActionResult =>
+    opts && drawnAsLights(node) ? { ...r, display: rememberLook(r.display, node, opts) } : r;
+
   /** Plug in on the photo (adding an extension cord when a strand does not reach). */
   const plugHere = (d: Display, childId: string, target: Target) =>
     photoView ? plugOnPhoto(d, photoView, childId, target, { autoCord: autoCords, isNew: isNewHere(d) }) : replug(d, childId, target);
@@ -857,7 +862,7 @@ export function App() {
       act(
         (d) => {
           const placed = setPlacement(d, id, photoView.id, placement);
-          const looked = opts ? updateNode(placed.display, id, lightPatch(d.nodes[id], opts)) : placed;
+          const looked = opts ? remembered(updateNode(placed.display, id, lightPatch(d.nodes[id], opts)), d.nodes[id], opts) : placed;
           return snap ? plugHere(looked.display, id, snap) : looked;
         },
         (r) => {
@@ -874,7 +879,7 @@ export function App() {
       const target = snap ?? it.target;
       act(
         (d) => {
-          const r = addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement);
+          const r = remembered(addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement), p, opts);
           return target?.parent ? plugHere(r.display, r.nodeId!, target) : r;
         },
         (r, next) => {
@@ -994,6 +999,7 @@ export function App() {
             canBush={drawnAsLights(selNode)}
             canSplice={isRun(selNode) && selNode.placements?.[photoView.id]?.kind === 'path'}
             onSplice={() => setIntent({ type: 'splice', nodeId: selNode.id })}
+            onSwapEnds={() => act((d) => swapEnds(d, selNode.id, photoView.id), () => showToast(`Swapped the plug and the end of ${selNode.id}`, true))}
             onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
             onDraw={(area) => setIntent({ type: 'draw', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}`, area })}
             defaultArea={drawnAsLights(selNode) && drawsAsArea(selNode)}
@@ -1020,6 +1026,12 @@ export function App() {
         showToast(`Deleted ${selNode.id} and everything below it`, true);
       }}
       onSaveAsPreset={(name, icon) => void saveAsPreset(selNode.id, name, icon)}
+      onLook={(opts) => act((d) => ({ display: rememberLook(updateNode(d, selNode.id, lightPatch(d.nodes[selNode.id], opts)).display, selNode, opts), nodeId: selNode.id }))}
+      sameKindCount={sameKind(display, selNode).length}
+      onLookAll={(opts) => {
+        const n = sameKind(display, selNode).length;
+        act((d) => ({ display: applyLookToAll(d, d.nodes[selNode.id], opts), nodeId: selNode.id }), () => showToast(`${n} lights now look the same`, true));
+      }}
     />
   );
 
@@ -1190,12 +1202,20 @@ export function App() {
               onFinishRun={finishRun}
               onSkipPlacing={skipPlacing}
               draftBase={draftBase}
-              onSetScale={(fpp) => {
+              onAddMeasure={(m) => {
                 if (!photoView) return;
                 setIntent(undefined);
-                act((d) => updateView(d, photoView.id, { feetPerPx: fpp }));
-                showToast('Scale saved: light runs now show their length', true);
+                const count = (photoView.measures?.length ?? 0) + 1;
+                act(
+                  (d) => addMeasure(d, photoView.id, m),
+                  () => showToast(count > 1 ? `Scale from ${count} measurements: tap Scale set to see how well they agree` : 'Scale saved: runs now show their length and bulbs', true),
+                );
               }}
+              onRemoveMeasure={(i) => photoView && act((d) => removeMeasure(d, photoView.id, i))}
+              canUndo={hist.past.length > 0}
+              canRedo={hist.future.length > 0}
+              onUndo={doUndo}
+              onRedo={doRedo}
               onMovePlacement={(id, placement) => photoView && act((d) => setPlacement(d, id, photoView.id, placement))}
               onPlugInto={(id, parent, port) => {
                 setIntent(undefined);
@@ -1389,6 +1409,7 @@ export function App() {
           title="Add to the photo"
           custom={custom}
           onDeleteCustom={(p) => void deletePreset(p)}
+          lead={photoView && <StartHere display={display} view={photoView} onPlace={(it) => { setPhotoPicker(false); setIntent(it); }} />}
           onClose={() => setPhotoPicker(false)}
           onPick={(p) => {
             setPhotoPicker(false);
@@ -1479,6 +1500,7 @@ function PhotoNodeActions(props: {
   onPlace: () => void;
   onDraw: (area: boolean) => void;
   onSplice: () => void;
+  onSwapEnds: () => void;
   onRemove: () => void;
   onUseLength: (ft: number) => void;
 }) {
@@ -1495,6 +1517,11 @@ function PhotoNodeActions(props: {
           {props.canSplice && (
             <button type="button" onClick={props.onSplice}>
               ✂️ Add inline female
+            </button>
+          )}
+          {placement?.kind === 'path' && (
+            <button type="button" onClick={props.onSwapEnds} title="Make the other end the plug (male) end">
+              ⇄ Swap plug and end
             </button>
           )}
           {canBush && (
@@ -1519,5 +1546,41 @@ function PhotoNodeActions(props: {
         </button>
       )}
     </>
+  );
+}
+
+/**
+ * "Start here" at the top of "+ Add item" on a photo without an outlet or a scale yet:
+ * everything plugs into an outlet, and measuring makes lengths and cords come out right.
+ */
+function StartHere({ display, view, onPlace }: { display: Display; view: { id: string; feetPerPx?: number }; onPlace: (it: PhotoIntent) => void }) {
+  const onPhoto = Object.values(display.nodes).filter((n) => n.placements?.[view.id]);
+  const hasOutlet = onPhoto.some((n) => n.kind === 'outlet');
+  if (hasOutlet && view.feetPerPx) return null;
+  const waiting = Object.values(display.nodes).find((n) => n.kind === 'outlet' && !n.placements?.[view.id]);
+  return (
+    <section className="start-here" aria-label="Start here">
+      <h3>Start here</h3>
+      <p className="muted small">
+        {!hasOutlet ? 'Put an outlet on the photo first: everything plugs into one.' : ''}
+        {!view.feetPerPx ? ' Measuring the photo makes lengths, bulbs and cords come out right.' : ''}
+      </p>
+      <div className="start-row">
+        {!hasOutlet && (
+          <button
+            type="button"
+            className="primary"
+            onClick={() => onPlace(waiting ? { type: 'place', nodeId: waiting.id, name: `${waiting.id} ${waiting.label}` } : { type: 'place', presetId: 'outlet', name: 'Outlet' })}
+          >
+            🔌 {waiting ? `Place ${waiting.id} ${waiting.label}` : 'Add an outlet'}
+          </button>
+        )}
+        {!view.feetPerPx && (
+          <button type="button" onClick={() => onPlace({ type: 'scale' })}>
+            📏 Measure the photo
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
