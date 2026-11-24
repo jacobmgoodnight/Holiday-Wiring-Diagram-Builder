@@ -31,9 +31,12 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  // The version check always asks the network (never the cache).
+  if (new URL(req.url).pathname.endsWith('/version.json')) return;
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      // Revalidate with the server so a reload after an update gets the new page.
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('./index.html', copy));

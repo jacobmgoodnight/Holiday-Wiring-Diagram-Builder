@@ -27,6 +27,8 @@ import { type Change, compareDisplays, copyForNextYear, nextTitle } from './mode
 import { type History, initHistory, push, redo, undo } from './model/history';
 import type { Display, DisplayNode, NodeKind, Placement } from './model/types';
 import { type BuildResult, buildDisplay } from './outline';
+import { isIosBrowserTab, keepStorage, noteBackup, noteEdit, readSafety, shouldNudgeBackup, shouldShowIosTip, snoozeBackup, writeSafety } from './store/safety';
+import { newVersionAvailable } from './store/update';
 import { syncFromModel } from './outline/sync';
 import { presetFromNode, presetText, suggest } from './presets/custom';
 import { PRESETS, type Preset, presetById } from './presets/presets';
@@ -223,6 +225,18 @@ export function App() {
   const phone = usePhone();
   const [moving, setMoving] = useState<string | undefined>();
   const [toast, setToast] = useState<Toast | null>(null);
+  /** Backup reminder and iPhone tip state (this device). */
+  const [safety, setSafety] = useState(readSafety);
+  const updateSafety = (fn: (s: ReturnType<typeof readSafety>) => ReturnType<typeof readSafety>) =>
+    setSafety((s) => {
+      const next = fn(s);
+      writeSafety(next);
+      return next;
+    });
+  const askedToKeep = useRef(false);
+  const iosTab = useMemo(() => isIosBrowserTab(), []);
+  /** A newer version of the app has been published. */
+  const [updateReady, setUpdateReady] = useState(false);
   /** In-page confirmation (browser confirm() is unavailable in some viewers and jarring on phones). */
   const [ask, setAsk] = useState<{ title: string; message: string; confirm: string; resolve: (ok: boolean) => void } | null>(null);
   const confirmInApp = (title: string, message: string, confirm: string) =>
@@ -392,7 +406,32 @@ export function App() {
     // Never apply an edit to a different display than the one it was made in.
     setHist((h) => (h && h.present.id === next.id ? push(h, next, { coalesceKey }) : h));
     scheduleSave(next);
+    if (persist.current) {
+      updateSafety((s) => noteEdit(s, now));
+      // Ask the browser to keep this site's data, once a session, right after a real edit.
+      if (!askedToKeep.current) {
+        askedToKeep.current = true;
+        void keepStorage();
+      }
+    }
   };
+
+  // Notice when a newer version has been published (production builds only).
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    let live = true;
+    const check = () => void newVersionAvailable().then((yes) => live && yes && setUpdateReady(true));
+    const first = window.setTimeout(check, 3000);
+    const every = window.setInterval(check, 30 * 60 * 1000);
+    const onShow = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      live = false;
+      window.clearTimeout(first);
+      window.clearInterval(every);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, []);
 
   const editText = (text: string) => {
     if (!doc) return;
@@ -748,6 +787,7 @@ export function App() {
     const backup = makeBackup(await allDisplays(), new Date(), await exportBackupPhotos());
     const day = new Date().toISOString().slice(0, 10);
     downloadText(JSON.stringify(backup, null, 1), `wiring-sketchpad-backup-${day}.json`, 'application/json');
+    updateSafety((s) => noteBackup(s, Date.now()));
     showToast(`Backup of ${backup.displays.length} display${backup.displays.length === 1 ? '' : 's'} downloaded. Keep it somewhere safe.`);
   };
 
@@ -1130,6 +1170,45 @@ export function App() {
           <ThemeButton />
         </div>
       </header>
+      {(() => {
+        // One notice at a time: an update first, then a backup reminder, then the iPhone tip.
+        if (updateReady)
+          return (
+            <div className="notice" role="status">
+              <span>A new version of the app is ready.</span>
+              <button type="button" className="primary" onClick={() => location.reload()}>
+                Reload
+              </button>
+              <button type="button" onClick={() => setUpdateReady(false)}>
+                Later
+              </button>
+            </div>
+          );
+        if (persist.current && shouldNudgeBackup(safety, Date.now()))
+          return (
+            <div className="notice" role="status">
+              <span>Your plans are only on this device. Back up so nothing is lost if the browser clears its data.</span>
+              <button type="button" className="primary" onClick={() => void exportBackup()}>
+                Back up now
+              </button>
+              <button type="button" onClick={() => updateSafety((s) => snoozeBackup(s, Date.now()))}>
+                Later
+              </button>
+            </div>
+          );
+        if (persist.current && shouldShowIosTip(safety, iosTab))
+          return (
+            <div className="notice" role="status">
+              <span>
+                On iPhone, add this app to your Home Screen so Safari keeps your plans: tap <b>Share</b>, then <b>Add to Home Screen</b>.
+              </span>
+              <button type="button" onClick={() => updateSafety((s) => ({ ...s, iosTipDone: true }))}>
+                Got it
+              </button>
+            </div>
+          );
+        return null;
+      })()}
 
       <nav className="views" aria-label="View">
         <div className="seg" role="group" aria-label="Mode">

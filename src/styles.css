@@ -557,3 +557,10 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 .shopping-photo { width: auto; min-width: 240px; margin-bottom: 4px; }
 .chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 .chips-row .chip { min-height: 34px; }
+
+/* Notices: update ready, backup reminder, iPhone Home Screen tip */
+.notice { flex: none; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 12px; background: #fef3c7; color: #422006; border-bottom: 1px solid #f59e0b; font-size: 0.9rem; }
+.notice span { flex: 1 1 260px; }
+.notice button { min-height: 38px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .notice { background: #422006; color: #fef3c7; } }
+:root[data-theme="dark"] .notice { background: #422006; color: #fef3c7; }
