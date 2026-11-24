@@ -590,3 +590,13 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
   .install-figure { break-inside: avoid; }
   .install-steps li { break-inside: avoid; }
 }
+
+/* Phone precision: magnifier while placing points, and the photo gets the screen */
+.photo-box { -webkit-touch-callout: none; }
+.loupe { position: absolute; z-index: 4; width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 3px solid #fff; box-shadow: 0 4px 16px rgb(0 0 0 / 0.45); background: #111; pointer-events: none; }
+.loupe img { position: absolute; max-width: none; pointer-events: none; }
+.loupe-cross { position: absolute; inset: 0; }
+.loupe-cross::before, .loupe-cross::after { content: ''; position: absolute; background: #f59e0b; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5); }
+.loupe-cross::before { left: 59px; top: 36px; width: 2px; height: 48px; }
+.loupe-cross::after { top: 59px; left: 36px; height: 2px; width: 48px; }
+.app.photo-focus > .bar, .app.photo-focus > nav.views, .app.photo-focus > .notice, .app.photo-focus .photo-bar { display: none; }

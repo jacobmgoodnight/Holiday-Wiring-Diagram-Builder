@@ -1101,7 +1101,7 @@ export function App() {
   );
 
   return (
-    <div className="app">
+    <div className={`app${phone && mode === 'photo' && intent ? ' photo-focus' : ''}`}>
       <header className="bar">
         <div className="bar-title">
           <select aria-label="Display" value={doc.id} onChange={(e) => void switchTo(e.target.value)} disabled={!persist.current}>

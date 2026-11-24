@@ -235,6 +235,56 @@ export function PhotoEditor(props: Props) {
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ startX: number; startY: number; moved: boolean; pinch?: { d0: number; mid: Pt; xf: Xf }; pan?: Xf } | null>(null);
 
+  // ---- Magnifier: press and hold while placing a point; slide to fine-tune; lift to place.
+  const [loupe, setLoupe] = useState<{ x: number; y: number; img: Pt } | null>(null);
+  const hold = useRef<{ id: number; timer: number; start: Pt; active: boolean } | null>(null);
+  const placing = intent?.type === 'draw' || intent?.type === 'scale' || intent?.type === 'place' || intent?.type === 'splice';
+  const loupeAt = (clientX: number, clientY: number) => {
+    const r = box.current!.getBoundingClientRect();
+    setLoupe({ x: clientX - r.left, y: clientY - r.top, img: toImage(clientX, clientY) });
+  };
+  const endHold = () => {
+    if (hold.current) window.clearTimeout(hold.current.timer);
+    hold.current = null;
+    setLoupe(null);
+  };
+  const holdDown = (e: RPointerEvent) => {
+    if (!placing || !e.isPrimary || ptrs.current.size > 0) {
+      if (hold.current && !hold.current.active) endHold(); // a second finger: pinch, not hold
+      return;
+    }
+    const { clientX, clientY, pointerId } = e;
+    const timer = window.setTimeout(() => {
+      if (!hold.current || hold.current.id !== pointerId) return;
+      hold.current.active = true;
+      loupeAt(clientX, clientY);
+    }, 350);
+    hold.current = { id: pointerId, timer, start: [clientX, clientY], active: false };
+  };
+  const holdMove = (e: RPointerEvent) => {
+    const h = hold.current;
+    if (!h || h.id !== e.pointerId) return;
+    if (h.active) {
+      e.stopPropagation(); // no panning or dragging while magnifying
+      loupeAt(e.clientX, e.clientY);
+    } else if (Math.hypot(e.clientX - h.start[0], e.clientY - h.start[1]) > TAP_SLOP) endHold();
+  };
+  const holdUp = (e: RPointerEvent) => {
+    const h = hold.current;
+    if (!h || h.id !== e.pointerId) return;
+    if (h.active) {
+      // Place the point under the crosshair instead of whatever the press started.
+      e.stopPropagation();
+      ptrs.current.delete(e.pointerId);
+      gesture.current = null;
+      drag.current = null;
+      sockDrag.current = null;
+      setPreview(null);
+      tapAt(toImage(e.clientX, e.clientY));
+    }
+    endHold();
+  };
+
   const onDown = (e: RPointerEvent) => {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -513,6 +563,10 @@ export function PhotoEditor(props: Props) {
       <div
         className={`photo-box${intent ? ' armed' : ''}`}
         ref={box}
+        onPointerDownCapture={holdDown}
+        onPointerMoveCapture={holdMove}
+        onPointerUpCapture={holdUp}
+        onPointerCancelCapture={() => endHold()}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -697,6 +751,22 @@ export function PhotoEditor(props: Props) {
             )}
           </svg>
         </div>
+        {loupe && photoUrl && (
+          <div className="loupe" style={{ left: loupe.x - 60, top: Math.max(4, loupe.y - 150) }} aria-hidden="true">
+            <img
+              src={photoUrl}
+              alt=""
+              draggable={false}
+              style={{
+                width: view.width * Math.min(4, k * 3),
+                height: view.height * Math.min(4, k * 3),
+                left: 60 - loupe.img[0] * Math.min(4, k * 3),
+                top: 60 - loupe.img[1] * Math.min(4, k * 3),
+              }}
+            />
+            <span className="loupe-cross" />
+          </div>
+        )}
         <div className="photo-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
           <button type="button" onClick={props.onUndo} disabled={!props.canUndo} aria-label="Undo" title="Undo">
             ↶

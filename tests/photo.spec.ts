@@ -488,5 +488,34 @@ test('shapes: outline a window from two corners, and a mega tree from three taps
   for (const [x, y] of [[1480, 520], [1400, 760], [1560, 760]] as const) await tap(page, x, y);
   await page.locator('.photo-banner').getByRole('button', { name: 'Done' }).click();
   await expect(page.getByRole('button', { name: 'L02 Mega tree on a bush' })).toBeVisible();
+  // It asks what the tree plugs into (L01 has an open end female); answer later.
+  await page.locator('.photo-banner').getByRole('button', { name: 'Later' }).click();
   await expectText(page, { contains: 'Mega tree' });
+});
+
+test('press and hold shows a magnifier; the point lands where you let go; phones give the photo the screen', async ({ page, isMobile }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+  if (isMobile) await expect(page.locator('header.bar')).toBeHidden(); // focus on the photo while drawing
+  await settled(page);
+  const [sx, sy] = await at(page, 400, 400);
+  const [ex, ey] = await at(page, 450, 380);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await expect(page.locator('.loupe')).toBeVisible();
+  await page.mouse.move(ex, ey, { steps: 5 }); // fine-tune: the photo does not pan
+  await page.mouse.up();
+  await expect(page.locator('.loupe')).toHaveCount(0);
+  await expect(page.locator('.photo-banner')).toContainText('1 point.');
+  await tap(page, 650, 190);
+  await page.locator('.photo-banner').getByRole('button', { name: 'Done' }).click();
+  // The run starts where the press was let go, not where it began.
+  await expect(page.getByLabel('Point 1 of L01')).toBeVisible();
+  await settled(page); // the header comes back after Done on a phone, and the photo re-fits
+  const img = (await page.locator('.photo-stage img').boundingBox())!;
+  const b = (await page.getByLabel('Point 1 of L01').boundingBox())!;
+  expect(Math.abs(((b.x + b.width / 2 - img.x) / img.width) * 1600 - 450)).toBeLessThan(12);
+  expect(Math.abs(((b.y + b.height / 2 - img.y) / img.height) * 1000 - 380)).toBeLessThan(12);
+  if (isMobile) await expect(page.locator('header.bar')).toBeVisible();
 });
