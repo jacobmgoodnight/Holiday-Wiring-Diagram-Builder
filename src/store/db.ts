@@ -27,7 +27,8 @@ export interface Snapshot {
   id?: number;
   displayId: string;
   at: number;
-  reason: 'auto' | 'manual' | 'before-restore';
+  /** 'sync': the other side of an edit made on two devices at once (kept, not pruned). */
+  reason: 'auto' | 'manual' | 'before-restore' | 'sync';
   title: string;
   itemCount: number;
   text: string;

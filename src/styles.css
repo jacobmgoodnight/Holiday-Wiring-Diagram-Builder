@@ -600,3 +600,18 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 .loupe-cross::before { left: 59px; top: 36px; width: 2px; height: 48px; }
 .loupe-cross::after { top: 59px; left: 36px; height: 2px; width: 48px; }
 .app.photo-focus > .bar, .app.photo-focus > nav.views, .app.photo-focus > .notice, .app.photo-focus .photo-bar { display: none; }
+
+/* Sync with other devices */
+.sync-dot { min-height: 32px; min-width: 32px; padding: 0 6px; font-size: 1rem; line-height: 1; color: var(--accent); }
+.sync-dot.busy { opacity: 0.6; animation: sync-pulse 1s ease-in-out infinite alternate; }
+.sync-dot.bad { color: var(--warn); border-color: var(--warn); }
+@keyframes sync-pulse { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sync-dot.busy { animation: none; } }
+.sync-sheet .field { width: 100%; }
+.sync-sheet .field input { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.04em; text-transform: uppercase; }
+.sync-label { margin: 12px 0 2px; font-size: 0.8rem; color: var(--muted); }
+.sync-code { margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.15rem; font-weight: 600; letter-spacing: 0.04em; overflow-wrap: anywhere; user-select: all; }
+.sync-status { margin-top: 0; }
+.sync-actions, .sync-off { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.sync-off { margin-top: 16px; }
+.sync-error { color: var(--err); margin: 6px 0; }
