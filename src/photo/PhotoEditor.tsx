@@ -32,7 +32,9 @@ import {
 } from './geometry';
 import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
 import { lookFor } from './lightOpts';
-import { type EdgeMap, loadEdgeMap, snapPoint, traceEdge } from './edges';
+import { type EdgeMap, followEdge, loadEdgeMap, snapPoint } from './edges';
+import { type DrawShape, MEGA_TREE_STRANDS, SHAPE_HINT, SHAPE_TAPS, megaTreeStrands, shapePoints } from './shapes';
+import { installSteps } from '../export/installSteps';
 
 const FOLLOW_KEY = 'wiring-sketchpad.followEdges';
 const readFollow = () => {
@@ -55,7 +57,9 @@ export type PhotoIntent =
   /** An open female was tapped: tap the strand or item that plugs into it. */
   | { type: 'connect'; parentId: string; port: string }
   /** Tap along a run to splice inline females into it. */
-  | { type: 'splice'; nodeId: string; added?: number };
+  | { type: 'splice'; nodeId: string; added?: number }
+  /** Install day: tap each item as you put it up (marks it installed, or back to planned). */
+  | { type: 'install' };
 
 /** Things of known size, for measuring the photo. */
 export const MEASURE_REFS: { name: string; ft: number; size: string }[] = [
@@ -103,6 +107,8 @@ interface Props {
   onSplice: (runId: string, along: number) => void;
   onMoveTap: (runId: string, index: number, along: number) => void;
   onRemoveFemale: (runId: string, index: number) => void;
+  /** Install mode: an item was tapped (installed ⇄ planned). */
+  onToggleInstalled: (id: string) => void;
   /** Items that cannot be plug targets for the moving item. */
   blocked?: Set<string>;
   night: boolean;
@@ -117,6 +123,13 @@ interface Xf {
 }
 
 const TAP_SLOP = 6;
+/** Shape choices while drawing a run. */
+const SHAPES: [DrawShape, string][] = [
+  ['free', 'Free'],
+  ['outline', '▭ Outline'],
+  ['arch', '⌒ Arch'],
+  ['wrap', '🌀 Wrap'],
+];
 /** Bulb sizes follow the zoom in steps, so pinching does not redraw every frame. */
 const quantize = (k: number) => Math.pow(1.2, Math.round(Math.log(k) / Math.log(1.2)));
 
@@ -137,6 +150,11 @@ export function PhotoEditor(props: Props) {
   const [edges, setEdges] = useState<EdgeMap | undefined>();
   /** How many draft points each tap added (a traced stretch is several), for "Undo point". */
   const [segs, setSegs] = useState<number[]>([]);
+  /** Drawing a shape (window outline, arch, wrap) instead of tapping along: its taps so far. */
+  const [shapeMode, setShapeMode] = useState<DrawShape>('free');
+  const [shapeTaps, setShapeTaps] = useState<Pt[]>([]);
+  /** Drawing a mega tree: tap its top, then both sides of the base. */
+  const fanMode = intent?.type === 'draw' && !!intent.area && !!draftBase && areaStyle(draftBase) === 'fan';
   /** Drawing started on an open female: the new run plugs in there. */
   const [snap, setSnap] = useState<{ parent: string; port: string } | undefined>();
   /** An inline female being slid along its run. */
@@ -162,6 +180,8 @@ export function PhotoEditor(props: Props) {
     setFeet('');
     setSnap(undefined);
     setSegs([]);
+    setShapeMode('free');
+    setShapeTaps([]);
     setRefName(undefined);
     // New lights start with the look last chosen for that kind, so the house stays matching.
     setOpts(
@@ -214,6 +234,56 @@ export function PhotoEditor(props: Props) {
   // ---- Background gestures: pan, pinch, wheel; a tap acts on the current intent.
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ startX: number; startY: number; moved: boolean; pinch?: { d0: number; mid: Pt; xf: Xf }; pan?: Xf } | null>(null);
+
+  // ---- Magnifier: press and hold while placing a point; slide to fine-tune; lift to place.
+  const [loupe, setLoupe] = useState<{ x: number; y: number; img: Pt } | null>(null);
+  const hold = useRef<{ id: number; timer: number; start: Pt; active: boolean } | null>(null);
+  const placing = intent?.type === 'draw' || intent?.type === 'scale' || intent?.type === 'place' || intent?.type === 'splice';
+  const loupeAt = (clientX: number, clientY: number) => {
+    const r = box.current!.getBoundingClientRect();
+    setLoupe({ x: clientX - r.left, y: clientY - r.top, img: toImage(clientX, clientY) });
+  };
+  const endHold = () => {
+    if (hold.current) window.clearTimeout(hold.current.timer);
+    hold.current = null;
+    setLoupe(null);
+  };
+  const holdDown = (e: RPointerEvent) => {
+    if (!placing || !e.isPrimary || ptrs.current.size > 0) {
+      if (hold.current && !hold.current.active) endHold(); // a second finger: pinch, not hold
+      return;
+    }
+    const { clientX, clientY, pointerId } = e;
+    const timer = window.setTimeout(() => {
+      if (!hold.current || hold.current.id !== pointerId) return;
+      hold.current.active = true;
+      loupeAt(clientX, clientY);
+    }, 350);
+    hold.current = { id: pointerId, timer, start: [clientX, clientY], active: false };
+  };
+  const holdMove = (e: RPointerEvent) => {
+    const h = hold.current;
+    if (!h || h.id !== e.pointerId) return;
+    if (h.active) {
+      e.stopPropagation(); // no panning or dragging while magnifying
+      loupeAt(e.clientX, e.clientY);
+    } else if (Math.hypot(e.clientX - h.start[0], e.clientY - h.start[1]) > TAP_SLOP) endHold();
+  };
+  const holdUp = (e: RPointerEvent) => {
+    const h = hold.current;
+    if (!h || h.id !== e.pointerId) return;
+    if (h.active) {
+      // Place the point under the crosshair instead of whatever the press started.
+      e.stopPropagation();
+      ptrs.current.delete(e.pointerId);
+      gesture.current = null;
+      drag.current = null;
+      sockDrag.current = null;
+      setPreview(null);
+      tapAt(toImage(e.clientX, e.clientY));
+    }
+    endHold();
+  };
 
   const onDown = (e: RPointerEvent) => {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -271,6 +341,19 @@ export function PhotoEditor(props: Props) {
     return Math.min(4, Math.max(fitK * 0.5, k));
   };
 
+  /** Shape taps → the draft: the generated outline, arch or wrap once complete. */
+  const applyShapeTaps = (taps: Pt[]) => {
+    setShapeTaps(taps);
+    setSegs(taps.map(() => 1));
+    if (fanMode) {
+      setDraft(taps);
+      return;
+    }
+    const sh = shapeMode as Exclude<DrawShape, 'free'>;
+    const made = taps.length >= SHAPE_TAPS[sh] ? shapePoints(sh, taps.map((t) => toPx(t, view))) : undefined;
+    setDraft(made ? made.map((x) => toFrac(x, view)) : taps);
+  };
+
   const tapAt = (p: Pt) => {
     if (!intent) {
       props.onSelect(undefined);
@@ -280,7 +363,13 @@ export function PhotoEditor(props: Props) {
     const f = toFrac(p, view);
     const u = 1 / xfRef.current.k;
     if (intent.type === 'place') props.onPlacePoint(intent, f);
-    else if (intent.type === 'draw') {
+    else if (intent.type === 'draw' && (fanMode || shapeMode !== 'free')) {
+      // Shapes: collect their taps (snapped to edges when following them), then make the run.
+      const map = follow ? edges : undefined;
+      const q = map ? snapPoint(map, p, 16 * u) : p;
+      const need = fanMode ? 3 : SHAPE_TAPS[shapeMode as Exclude<DrawShape, 'free'>];
+      applyShapeTaps(shapeTaps.length >= need ? [toFrac(q, view)] : [...shapeTaps, toFrac(q, view)]);
+    } else if (intent.type === 'draw') {
       // Starting on an open female (the end of the last strand) plugs the new one in there.
       const s = draft.length ? undefined : nearestOpenSocket(display, view, p, 24 * u, intent.nodeId);
       const map = follow ? edges : undefined;
@@ -289,11 +378,20 @@ export function PhotoEditor(props: Props) {
         setDraft([toFrac(s.at, view)]);
         setSegs([1]);
       } else {
-        // Snap the tap onto an edge, and follow the edge from the last point.
-        const q = map ? snapPoint(map, p, 16 * u) : p;
-        const pts = map && draft.length ? traceEdge(map, toPx(draft[draft.length - 1], view), q) : [q];
-        setDraft((d) => [...d, ...pts.map((x) => toFrac(x, view))]);
-        setSegs((sg) => [...sg, pts.length]);
+        // Snap the tap onto an edge, and follow the edge from the last point. The run ends on
+        // the edge near the tap; from the first tap it may also start a little to the side, so
+        // it stays on one edge (not when it starts on a socket: that end is plugged in).
+        const r = 16 * u;
+        if (!map || !draft.length) {
+          const q = map ? snapPoint(map, p, r) : p;
+          setDraft((d) => [...d, toFrac(q, view)]);
+          setSegs((sg) => [...sg, 1]);
+        } else {
+          const f = followEdge(map, toPx(draft[draft.length - 1], view), p, r, { freeStart: draft.length === 1 && !snap });
+          const pts = f.points.map((x) => toFrac(x, view));
+          setDraft((d) => (d.length === 1 && !snap ? [toFrac(f.start, view), ...pts] : [...d, ...pts]));
+          setSegs((sg) => [...sg, pts.length]);
+        }
       }
     } else if (intent.type === 'scale') setDraft((d) => (d.length >= 2 ? [f] : [...d, f]));
     else if (intent.type === 'splice') {
@@ -348,6 +446,8 @@ export function PhotoEditor(props: Props) {
         }
       } else if (intent?.type === 'connect') {
         if (d.id !== intent.parentId) props.onConnect(intent, d.id);
+      } else if (intent?.type === 'install') {
+        props.onToggleInstalled(d.id);
       } else if (intent?.type === 'draw' || intent?.type === 'scale' || intent?.type === 'place' || intent?.type === 'splice') {
         // Taps on top of markers still count as photo taps in these modes.
         tapAt(toImage(e.clientX, e.clientY));
@@ -432,6 +532,12 @@ export function PhotoEditor(props: Props) {
   const markerR = 17 * u;
   const drawPx = draft.map((p) => toPx(p, view));
   const movingId = intent?.type === 'move' ? intent.nodeId : undefined;
+  // Install mode: what is on this photo, in plug-in order, and the next one to put up.
+  const install = useMemo(() => {
+    if (intent?.type !== 'install') return undefined;
+    const steps = installSteps(display, { viewId: view.id }).filter((st) => st.onPhoto);
+    return { steps, done: steps.filter((st) => st.done).length, next: steps.find((st) => !st.done) };
+  }, [intent, display, view.id]);
   const plugTarget =
     (intent?.type === 'place' || intent?.type === 'draw') && intent.target
       ? intent.target.parent
@@ -439,7 +545,7 @@ export function PhotoEditor(props: Props) {
         ? intent.nodeId
         : intent?.type === 'connect'
           ? intent.parentId
-          : undefined;
+          : install?.next?.id;
 
   const scalePx = intent?.type === 'scale' && draft.length === 2 ? drawPx : null;
   const scaleFeet = Number(feet);
@@ -466,6 +572,10 @@ export function PhotoEditor(props: Props) {
       <div
         className={`photo-box${intent ? ' armed' : ''}`}
         ref={box}
+        onPointerDownCapture={holdDown}
+        onPointerMoveCapture={holdMove}
+        onPointerUpCapture={holdUp}
+        onPointerCancelCapture={() => endHold()}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -496,14 +606,18 @@ export function PhotoEditor(props: Props) {
             )}
 
             {lines.map((l) => {
-              const hot = selectedId === l.childId || selectedId === l.parentId;
+              const hot = selectedId === l.childId || selectedId === l.parentId || (!!selectedId && l.via.includes(selectedId));
               const d = cablePath(l.from, l.to);
               const sag = Math.min(Math.hypot(l.to[0] - l.from[0], l.to[1] - l.from[1]) * 0.18, 400);
               const mid: Pt = [(l.from[0] + l.to[0]) / 2, (l.from[1] + l.to[1]) / 2 + sag / 2];
               const len = l.lengthFt !== undefined && hot ? `~${Math.round(l.lengthFt)} ft` : '';
-              const via = [l.via.join(', '), len].filter(Boolean).join(' · ');
+              // A cord that no longer reaches says so, always.
+              const via = l.short
+                ? `${l.via.join(', ')} · ${l.short.have} ft, needs ~${l.short.need}`
+                : [l.via.join(', '), len].filter(Boolean).join(' · ');
+              const tag = l.via[0];
               return (
-                <g key={`w-${l.childId}`} className={`cable${hot ? ' hot' : ''}`} pointerEvents="none">
+                <g key={`w-${l.childId}`} className={`cable${hot ? ' hot' : ''}${l.short ? ' short' : ''}`} pointerEvents="none">
                   <path d={d} fill="none" stroke={hot ? '#f59e0b' : 'rgba(0,0,0,0.55)'} strokeWidth={(hot ? 6 : 4.2) * u} strokeLinecap="round" />
                   <path
                     className="wire-line"
@@ -514,11 +628,33 @@ export function PhotoEditor(props: Props) {
                     strokeWidth={2.4 * u}
                     strokeLinecap="round"
                   />
+                  {l.short && <path d={d} fill="none" stroke="#dc2626" strokeWidth={2.4 * u} strokeDasharray={`${6 * u} ${5 * u}`} strokeLinecap="round" />}
                   <rect x={l.from[0] - 3.5 * u} y={l.from[1] - 3.5 * u} width={7 * u} height={7 * u} rx={1.5 * u} fill={l.color} stroke="rgba(0,0,0,0.7)" strokeWidth={u} />
                   {via && (
-                    <g transform={`translate(${mid[0]} ${mid[1]})`}>
-                      <rect x={-(via.length * 3.7 + 6) * u} y={-8 * u} width={(via.length * 7.4 + 12) * u} height={15 * u} rx={4 * u} fill="rgba(255,255,255,0.92)" stroke={l.color} strokeWidth={u} />
-                      <text y={3.5 * u} fontSize={10.5 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
+                    <g
+                      transform={`translate(${mid[0]} ${mid[1]})`}
+                      pointerEvents={tag && !intent ? 'auto' : 'none'}
+                      className={tag ? 'cable-tag' : undefined}
+                      role={tag ? 'button' : undefined}
+                      aria-label={tag ? (l.short ? `${tag} is too short: ${l.short.have} ft, needs about ${l.short.need} ft` : `Select ${tag}`) : undefined}
+                      onPointerDown={(e) => tag && e.stopPropagation()}
+                      onPointerUp={(e) => {
+                        if (!tag) return;
+                        e.stopPropagation();
+                        props.onSelect(tag);
+                      }}
+                    >
+                      <rect
+                        x={-(via.length * 3.7 + 6) * u}
+                        y={-8 * u}
+                        width={(via.length * 7.4 + 12) * u}
+                        height={15 * u}
+                        rx={4 * u}
+                        fill={l.short ? '#fee2e2' : 'rgba(255,255,255,0.92)'}
+                        stroke={l.short ? '#dc2626' : l.color}
+                        strokeWidth={(l.short ? 1.5 : 1) * u}
+                      />
+                      <text y={3.5 * u} fontSize={10.5 * u} textAnchor="middle" fontWeight={700} fill={l.short ? '#7f1d1d' : '#0f172a'} fontFamily="ui-monospace, Menlo, monospace">
                         {via}
                       </text>
                     </g>
@@ -624,6 +760,22 @@ export function PhotoEditor(props: Props) {
             )}
           </svg>
         </div>
+        {loupe && photoUrl && (
+          <div className="loupe" style={{ left: loupe.x - 60, top: Math.max(4, loupe.y - 150) }} aria-hidden="true">
+            <img
+              src={photoUrl}
+              alt=""
+              draggable={false}
+              style={{
+                width: view.width * Math.min(4, k * 3),
+                height: view.height * Math.min(4, k * 3),
+                left: 60 - loupe.img[0] * Math.min(4, k * 3),
+                top: 60 - loupe.img[1] * Math.min(4, k * 3),
+              }}
+            />
+            <span className="loupe-cross" />
+          </div>
+        )}
         <div className="photo-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
           <button type="button" onClick={props.onUndo} disabled={!props.canUndo} aria-label="Undo" title="Undo">
             ↶
@@ -661,7 +813,13 @@ export function PhotoEditor(props: Props) {
           {drawing && (
             <>
               <span>
-                {drawing.area ? 'Tap around the bush to outline ' : 'Tap along the house to draw '}
+                {fanMode
+                  ? 'Tap the top of the tree, then the left and right of its base, for '
+                  : shapeMode !== 'free'
+                    ? `${SHAPE_HINT[shapeMode]} for `
+                    : drawing.area
+                      ? 'Tap around the bush to outline '
+                      : 'Tap along the house to draw '}
                 <b>{drawing.name}</b>
                 {drawing.target?.parent ? (
                   <>
@@ -683,6 +841,7 @@ export function PhotoEditor(props: Props) {
                 type="button"
                 disabled={!draft.length}
                 onClick={() => {
+                  if (fanMode || shapeMode !== 'free') return applyShapeTaps(shapeTaps.slice(0, -1));
                   // A traced stretch goes back in one step.
                   const n = segs[segs.length - 1] ?? 1;
                   if (segs.length <= 1) setSnap(undefined);
@@ -709,7 +868,33 @@ export function PhotoEditor(props: Props) {
               >
                 🧲 Follow edges{follow && photoUrl && !edges ? ' (reading photo…)' : ''}
               </button>
-              <button type="button" className="primary" disabled={draft.length < (drawing.area ? 3 : 2)} onClick={() => props.onFinishRun(drawing, draft, opts, snap)}>
+              {!drawing.area && (
+                <span className="seg shape-seg" role="group" aria-label="Shape">
+                  {SHAPES.map(([k, name]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={shapeMode === k ? 'on' : ''}
+                      aria-pressed={shapeMode === k}
+                      onClick={() => {
+                        setShapeMode(k);
+                        setShapeTaps([]);
+                        setDraft([]);
+                        setSegs([]);
+                        setSnap(undefined);
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </span>
+              )}
+              <button
+                type="button"
+                className="primary"
+                disabled={fanMode ? shapeTaps.length < 3 : shapeMode !== 'free' ? shapeTaps.length < SHAPE_TAPS[shapeMode] : draft.length < (drawing.area ? 3 : 2)}
+                onClick={() => props.onFinishRun(drawing, draft, opts, snap)}
+              >
                 Done
               </button>
               <button type="button" onClick={props.onCancelIntent}>
@@ -841,7 +1026,34 @@ export function PhotoEditor(props: Props) {
               </button>
             </>
           )}
-          {!drawing && intent.type !== 'splice' && (
+          {install && (
+            <>
+              <span>
+                Install: tap each item as you put it up.{' '}
+                <b>
+                  {install.done} of {install.steps.length}
+                </b>{' '}
+                done on this photo.
+                {install.next ? (
+                  <>
+                    {' '}
+                    Next: <b>{install.next.n}.</b> {install.next.text}
+                  </>
+                ) : (
+                  ' All done. 🎉'
+                )}
+              </span>
+              {install.next && (
+                <button type="button" className="primary" onClick={() => props.onToggleInstalled(install.next!.id)}>
+                  ✓ {install.next.id} is up
+                </button>
+              )}
+              <button type="button" onClick={props.onCancelIntent}>
+                Done
+              </button>
+            </>
+          )}
+          {!drawing && intent.type !== 'splice' && intent.type !== 'install' && (
             <button type="button" onClick={props.onCancelIntent}>
               {intent.type === 'move' && intent.fresh ? 'Later' : 'Cancel'}
             </button>
@@ -926,6 +1138,7 @@ export function Marker({ node, at, r, u, selected, target, dim, onDown, onMove, 
       <text y={r + 15.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill={c.text} fontFamily="ui-monospace, Menlo, monospace">
         {node.id}
       </text>
+      {node.status !== 'planned' && <DoneBadge at={[r * 0.8, -r * 0.8]} u={u} />}
     </g>
   );
 }
@@ -966,7 +1179,12 @@ export function Lights(props: LightsProps) {
   const { node, placement, view, u, ub, night, grad, selected, editable, dim, target, draft, hideLabel, onDown, onMove, onUp } = props;
   const area = placement.kind === 'area';
   const style = runStyle(node);
-  const shape = useMemo(() => shapePx(placement, view, node.smooth) ?? [], [placement, view.width, view.height, node.smooth]);
+  // A mega tree keeps its three points (top, base left, base right); other bushes are rounded.
+  const fan = area && areaStyle(node) === 'fan';
+  const shape = useMemo(
+    () => (fan && placement.kind === 'area' ? placement.points.map((q) => toPx(q, view)) : (shapePx(placement, view, node.smooth) ?? [])),
+    [placement, view.width, view.height, node.smooth, fan],
+  );
   const colors = bulbColors(node);
   const wire = wireColorOf(node);
   const spacing = bulbSpacingPx(node, view);
@@ -978,9 +1196,17 @@ export function Lights(props: LightsProps) {
   const stride = Math.max(1, Math.ceil((shapeKind === 'c9' ? w * 1.5 : w * 1.9) / spacing));
   const step = spacing * stride;
   const net = area && areaStyle(node) === 'net';
+  const strands = useMemo(() => (fan && shape.length >= 3 ? megaTreeStrands(shape[0], shape[1], shape[2], MEGA_TREE_STRANDS) : []), [fan, shape]);
   const bulbs = useMemo(
-    () => (style === 'plain' && !area ? [] : area ? areaBulbs(shape, step, net ? 'net' : 'wrap') : pointsAlong(shape, step)),
-    [shape, step, style, area, net],
+    () =>
+      fan
+        ? strands.flatMap(([a, z]) => pointsAlong([a, z], step).slice(1))
+        : style === 'plain' && !area
+          ? []
+          : area
+            ? areaBulbs(shape, step, net ? 'net' : 'wrap')
+            : pointsAlong(shape, step),
+    [shape, step, style, area, net, fan, strands],
   );
   const line = shape.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const b = useMemo(() => bounds(shape), [shape]);
@@ -1023,7 +1249,13 @@ export function Lights(props: LightsProps) {
     const rot = (i: number) => ((i * 53) % 7) * 15 - 45;
     body = (
       <>
-        {net ? <NetMesh id={fid} ring={shape} step={step} box={b} wire={wire} width={wireW * 0.8} /> : <polyline points={bulbs.map((p) => p.join(',')).join(' ')} fill="none" stroke={wire} strokeWidth={wireW * 0.8} opacity={0.8} />}
+        {fan ? (
+          strands.map(([a, z], i) => <line key={`st${i}`} x1={a[0]} y1={a[1]} x2={z[0]} y2={z[1]} stroke={wire} strokeWidth={wireW * 0.8} opacity={0.85} />)
+        ) : net ? (
+          <NetMesh id={fid} ring={shape} step={step} box={b} wire={wire} width={wireW * 0.8} />
+        ) : (
+          <polyline points={bulbs.map((p) => p.join(',')).join(' ')} fill="none" stroke={wire} strokeWidth={wireW * 0.8} opacity={0.8} />
+        )}
         {night && bulbs.map((p, i) => halo(p, i, w * 0.9))}
         {bulbs.map((p, i) => bulb(p, i, shapeKind === 'mini' ? rot(i) : 0))}
       </>
@@ -1113,6 +1345,7 @@ export function Lights(props: LightsProps) {
           <text y={1.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
             {label}
           </text>
+          {!draft && (node as DisplayNode).status !== undefined && (node as DisplayNode).status !== 'planned' && <DoneBadge at={[labelW / 2 + 2 * u, -3 * u]} u={u} />}
         </g>
       </g>
       {editable &&
@@ -1132,6 +1365,16 @@ export function Lights(props: LightsProps) {
             />
           );
         })}
+    </g>
+  );
+}
+
+/** Installed: a green tick. */
+function DoneBadge({ at, u }: { at: Pt; u: number }) {
+  return (
+    <g transform={`translate(${at[0]} ${at[1]})`} pointerEvents="none" role="img" aria-label="installed">
+      <circle r={8 * u} fill="#16a34a" stroke="#ffffff" strokeWidth={1.8 * u} />
+      <path d={`M${-3.6 * u},${0.2 * u} L${-1 * u},${2.8 * u} L${3.8 * u},${-2.6 * u}`} fill="none" stroke="#ffffff" strokeWidth={2 * u} strokeLinecap="round" strokeLinejoin="round" />
     </g>
   );
 }

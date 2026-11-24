@@ -55,6 +55,7 @@ export const PRESETS: Preset[] = [
   { id: 'net', name: 'Net lights (bush)', icon: '🌳', group: 'load', kind: 'load', category: 'icicle', label: 'Net lights', outputs: 1, spacingIn: 4, keywords: 'bush shrub hedge net' },
   { id: 'bushmini', name: 'Bush wrap (minis)', icon: '🌿', group: 'load', kind: 'load', category: 'mini', label: 'Bush mini lights', outputs: 1, spacingIn: 4, keywords: 'bush shrub hedge wrap twinkle' },
   { id: 'pixel', name: 'Pixel tree', icon: '🌈', group: 'load', kind: 'load', category: 'pixel', label: 'Pixel tree', keywords: 'wled rgb mega tree' },
+  { id: 'megatree', name: 'Mega tree', icon: '🎄', group: 'load', kind: 'load', category: 'tree', label: 'Mega tree', outputs: 1, spacingIn: 4, hint: 'Strands from the top to a ring on the ground', keywords: 'pixel mega tree cone strands topper' },
   { id: 'tree', name: 'Lit tree', icon: '🎄', group: 'load', kind: 'load', category: 'tree', label: 'Tree lights', keywords: 'christmas tree' },
   { id: 'wreath', name: 'Wreath', icon: '🎀', group: 'load', kind: 'load', category: 'wreath', label: 'Wreath', keywords: 'garland' },
   { id: 'pathway', name: 'Ground stake lights', icon: '🍬', group: 'load', kind: 'load', category: 'pathway', label: 'Pathway lights', outputs: 1, spacingIn: 12, smooth: true, keywords: 'candy cane walkway stake ground c9 c7 driveway' },

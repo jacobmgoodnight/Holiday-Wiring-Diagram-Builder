@@ -476,6 +476,58 @@ Decisions:
   or a window; tapping each corner (eaves and peak) is more reliable than guessing.
 * **D41. No new libraries**: edge finding is ~200 lines of plain TypeScript.
 
+## Safety, install and sync round
+
+* **Keep plans safe** (`src/store/safety.ts`): the app asks the browser to keep its data
+  (`navigator.storage.persist`) after the first real edit; a backup reminder after 40 edits
+  never backed up (or 25 edits and 14 days), snoozed for a week by "Later" and not shown
+  while sync ran in the last 14 days; a one-time iPhone tip to add the app to the Home
+  Screen. **New version**: the build id is baked in and published as `version.json`; the
+  app checks it shortly after opening, every 30 minutes and when it comes back to the screen.
+* **Cords that no longer reach**: with a measured photo, a cord whose length is under
+  1.15 × the gap + 1 ft is flagged; the fix picks the next common length.
+* **Install sheet and install mode** (`src/export/installSteps.ts`, `src/ui/InstallSheet.tsx`):
+  steps in plug-in order, "Start at O01 …", "Plug L02 into C01's tap 2"; numbers on the
+  picture match the steps.
+* **Shapes** (`src/photo/shapes.ts`): outline, arch, wrap and mega tree are generated from a
+  few taps and stored as ordinary runs.
+* **Phone precision**: press and hold for a magnifier while placing; the photo takes the
+  screen while drawing.
+* **Sync** (`src/sync/`): a 24-character code (120 random bits, Crockford base 32) is the
+  only secret. HKDF-SHA-256 derives a lookup id and an AES-GCM-256 key from it; the plans
+  (gzipped JSON) and each photo are sealed with a fresh IV and bound to what they are, so
+  blobs cannot be swapped. The server (`supabase/migrations/*_hwd_sync.sql`) is a few
+  security-definer functions over two `hwd_` tables with row level security on and no
+  policies: they store and return blobs by lookup id, with an optimistic revision number.
+  Merging is per display with a hash of each and the hashes at the last sync: one side
+  changed → it wins; both → the newer wins and the other is kept as a restore point; a
+  delete is followed unless the other side changed it since. Sync runs on opening, a few
+  seconds after edits, when the app comes back, and every 90 seconds while open.
+* **Follow edges, tuned on real house photos**: Sobel on each colour channel (blue sky over a
+  grey roof of the same brightness counts); the path cost also prefers stepping along edges
+  that run the way of the line; the run may end on any edge within reach of the tap (and
+  start anywhere near the first tap), with a small cost for ending further from it, then
+  carries on along its straight edge while that brings it nearer the tap; a path within
+  3 map px (or 3%) of a straight line becomes that line.
+
+Decisions:
+
+* **D42. Sync talks to a server only once you turn it on.** The server is the hwd_ tables and
+  functions in the shared Supabase project (applied 2026-11-24; signed-in users of the other
+  apps cannot call them, only the public key can). Supabase's linter warns that the public
+  key can call these security-definer functions: that is the design, as they are the only
+  way in and each needs the lookup id from a sync code.
+* **D43. The code is the key, with no account.** Simple for a family (type it on the second
+  device), and the server never holds anything readable. Lose the code and the cloud copy is
+  unreadable, but every device still has its plans and can start a new code.
+* **D44. A sync link never joins by itself**: it opens the join screen with the code filled
+  in, so a link from someone else cannot quietly send your plans to their copy.
+* **D45. Joining checks the code finds synced plans** before anything is sent, so a typo
+  cannot start a new empty copy.
+* **D46. Edges are tuned on real photos but tested on drawn ones**: the photos used for
+  tuning are not in the repository; the unit tests draw the same situations (a downspout at
+  the corner, a wobbly hazy edge, blue sky over a grey roof).
+
 ## Replacing Holiday Display Blueprint
 
 This app is now the one planner; Holiday Display Blueprint is retired (no data migrated: it
@@ -491,18 +543,18 @@ held only test entries). From the Blueprint we took only what was worth it:
 * **One-tap Back up** in the top bar (the existing JSON backup).
 
 Not taken (already here, or not wanted): the property layout and zone-map editor, photo
-galleries, multi-page navigation, encrypted cloud sync, the separate lighting stock catalog,
+galleries, multi-page navigation, the Blueprint's cloud sync (this app has its own, D42–D45),
+  the separate lighting stock catalog,
 Field Mode (the Checklist is the field mode), the iOS companion plans. Load totals, quick-edit
 and season duplicate were offered and declined for now.
 
 Decisions:
 
-* **D42. Our own .xlsx code instead of SheetJS.** The npm build of SheetJS (0.18.5) has
+* **D47. Our own .xlsx code instead of SheetJS.** The npm build of SheetJS (0.18.5) has
   unfixed security advisories and newer builds are not on npm. A ~200-line reader/writer on
   `fflate` (8 KB, the one new dependency) covers text and number cells, shared strings and
   inline strings, and is loaded only when you use Excel.
-* **D43. Excel import never merges.** It always creates a new display, like a backup import of
+* **D48. Excel import never merges.** It always creates a new display, like a backup import of
   a display that already exists; merging rows into a live plan could silently rewire it.
-* **D44. The device file is export-only and versioned.** Readers should check `format` and
+* **D49. The device file is export-only and versioned.** Readers should check `format` and
   `version`; watts and amps are as entered, never estimated.
-

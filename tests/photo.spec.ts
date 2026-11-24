@@ -392,3 +392,130 @@ test('follow edges traces the roof line; photos can be renamed and each has its 
   await list.getByLabel('Which photo').selectOption({ label: 'Everything in the plan' });
   await expect(list.getByRole('region', { name: 'Lights along the house' })).toBeVisible();
 });
+
+test('desktop: a cord that no longer reaches is flagged, and one tap makes it long enough', async ({ page, isMobile }) => {
+  test.skip(!!isMobile, 'mouse drag');
+  await sampleHouse(page);
+  await page.getByRole('button', { name: /Measure/ }).click();
+  await tap(page, 1040, 760);
+  await tap(page, 1340, 760);
+  await page.getByRole('button', { name: 'Double garage door 16 ft' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: /Place from plan/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /O01/ }).click();
+  await tap(page, 580, 700);
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add C9 roofline run', exact: true }).first().click();
+  for (const [x, y] of [[260, 430], [650, 190]] as const) await tap(page, x, y);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.toast')).toContainText('Added C01, a 40 ft extension cord');
+
+  // Drag the roofline run up and to the left: the 40 ft cord no longer reaches.
+  await settled(page);
+  const [sx, sy] = await at(page, 455, 310);
+  const [tx, ty] = await at(page, 205, 160);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await page.mouse.move(tx, ty, { steps: 10 });
+  await page.mouse.up();
+  const tag = page.getByRole('button', { name: /^C01 is too short: 40 ft, needs about \d+ ft$/ });
+  await expect(tag).toBeVisible();
+
+  // Tap the red tag to select the cord, then let it pick a length that reaches.
+  await tag.click();
+  await page.getByRole('region', { name: 'Selected C01' }).getByRole('button', { name: /Needs ~\d+ ft: use a 50 ft cord/ }).click();
+  await expect(tag).toHaveCount(0);
+  await expectText(page, { contains: 'C01 Green extension cord 50ft' });
+});
+
+test('install mode ticks items on the photo; the install sheet lists the plug-in order', async ({ page }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: /Place from plan/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /O01/ }).click();
+  await tap(page, 580, 700);
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add Inflatable', exact: true }).first().click();
+  await tap(page, 880, 850);
+  await expect(page.getByRole('button', { name: 'L01 Inflatable on photo' })).toBeVisible();
+
+  // Install mode: the next step is pointed out; a tap on an item marks it up.
+  await page.getByRole('button', { name: 'Install mode' }).click();
+  const bar = page.locator('.photo-banner');
+  await expect(bar).toContainText('0 of 2 done on this photo');
+  await expect(bar).toContainText('Next: 1. Start at O01 Outlet.');
+  await bar.getByRole('button', { name: '✓ O01 is up' }).click();
+  await expect(bar).toContainText('1 of 2 done');
+  await page.getByRole('button', { name: 'L01 Inflatable on photo' }).click();
+  await expect(bar).toContainText('2 of 2 done on this photo. All done.');
+  await expect(page.getByRole('img', { name: 'installed' })).toHaveCount(2);
+  await bar.getByRole('button', { name: 'Done' }).click();
+
+  // The install sheet: numbered steps (installed ones ticked) and the numbered picture.
+  await page.getByLabel('Photo options').click();
+  await page.getByRole('menuitem', { name: '🖨 Install sheet…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Install sheet' });
+  const steps = sheet.getByRole('region', { name: 'Steps' });
+  await expect(steps).toContainText('1. Start at O01 Outlet.');
+  await expect(steps).toContainText('2. Plug L01 Inflatable into O01.');
+  await expect(steps.locator('li.done')).toHaveCount(2);
+  await expect(sheet.locator('.install-figure img')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Close install sheet' }).click();
+
+  // Same ticks as the Checklist (and the outline).
+  await expectText(page, { contains: 'Inflatable [installed]' });
+});
+
+test('shapes: outline a window from two corners, and a mega tree from three taps', async ({ page }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw Mini-light string' }).click();
+  await page.getByRole('group', { name: 'Shape' }).getByRole('button', { name: '▭ Outline' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('Tap two opposite corners of the window or door');
+  const done = page.locator('.photo-banner').getByRole('button', { name: 'Done' });
+  await tap(page, 360, 490);
+  await expect(done).toBeDisabled();
+  await tap(page, 500, 600);
+  await done.click();
+  // A closed outline: four corners and back to the first.
+  await expect(page.getByRole('button', { name: 'L01 Mini lights light run' })).toBeVisible();
+  await expect(page.getByLabel('Point 5 of L01')).toHaveCount(1);
+  await expect(page.getByLabel('Point 6 of L01')).toHaveCount(0);
+
+  await tap(page, 100, 150);
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw Mega tree' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('Tap the top of the tree, then the left and right of its base');
+  for (const [x, y] of [[1480, 520], [1400, 760], [1560, 760]] as const) await tap(page, x, y);
+  await page.locator('.photo-banner').getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: 'L02 Mega tree on a bush' })).toBeVisible();
+  // It asks what the tree plugs into (L01 has an open end female); answer later.
+  await page.locator('.photo-banner').getByRole('button', { name: 'Later' }).click();
+  await expectText(page, { contains: 'Mega tree' });
+});
+
+test('press and hold shows a magnifier; the point lands where you let go; phones give the photo the screen', async ({ page, isMobile }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw C9 roofline run' }).click();
+  if (isMobile) await expect(page.locator('header.bar')).toBeHidden(); // focus on the photo while drawing
+  await settled(page);
+  const [sx, sy] = await at(page, 400, 400);
+  const [ex, ey] = await at(page, 450, 380);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await expect(page.locator('.loupe')).toBeVisible();
+  await page.mouse.move(ex, ey, { steps: 5 }); // fine-tune: the photo does not pan
+  await page.mouse.up();
+  await expect(page.locator('.loupe')).toHaveCount(0);
+  await expect(page.locator('.photo-banner')).toContainText('1 point.');
+  await tap(page, 650, 190);
+  await page.locator('.photo-banner').getByRole('button', { name: 'Done' }).click();
+  // The run starts where the press was let go, not where it began.
+  await expect(page.getByLabel('Point 1 of L01')).toBeVisible();
+  await settled(page); // the header comes back after Done on a phone, and the photo re-fits
+  const img = (await page.locator('.photo-stage img').boundingBox())!;
+  const b = (await page.getByLabel('Point 1 of L01').boundingBox())!;
+  expect(Math.abs(((b.x + b.width / 2 - img.x) / img.width) * 1600 - 450)).toBeLessThan(12);
+  expect(Math.abs(((b.y + b.height / 2 - img.y) / img.height) * 1000 - 380)).toBeLessThan(12);
+  if (isMobile) await expect(page.locator('header.bar')).toBeVisible();
+});

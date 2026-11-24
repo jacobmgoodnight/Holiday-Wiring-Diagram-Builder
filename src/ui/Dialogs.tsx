@@ -4,7 +4,7 @@ import type { Snapshot } from '../store/db';
 import { Sheet } from './Sheet';
 
 const when = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-const REASON: Record<Snapshot['reason'], string> = { auto: 'Automatic', manual: 'Saved by you', 'before-restore': 'Before a restore' };
+const REASON: Record<Snapshot['reason'], string> = { auto: 'Automatic', manual: 'Saved by you', 'before-restore': 'Before a restore', sync: 'From sync: the other version' };
 
 export function RestoreDialog(props: {
   load: () => Promise<Snapshot[]>;

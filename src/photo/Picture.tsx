@@ -7,18 +7,31 @@ import { Sheet } from '../ui/Sheet';
 import { bulbColors, cablePath, toPx, wiringLines } from './geometry';
 import { BulbDefs, Lights, Marker } from './PhotoEditor';
 
-interface PictureOptions {
+export interface PictureOptions {
   night: boolean;
   /** Item markers and run labels. */
   items: boolean;
   /** Cables between items. */
   cables: boolean;
+  /** Numbered badges (install sheet): item ID → step number. */
+  numbers?: Record<string, number>;
+}
+
+/** Where an item's number badge goes: a marker's top right, or the plug end of a run. */
+function badgeAt(p: Placement, view: PhotoView, u: number): [number, number] {
+  if (p.kind === 'point') {
+    const [x, y] = toPx([p.x, p.y], view);
+    return [x + 20 * u, y - 20 * u];
+  }
+  // Runs and bushes carry their label above the plug end: the number goes just below it.
+  const [x, y] = toPx(p.points[0], view);
+  return [x - 10 * u, y + 16 * u];
 }
 
 const none = () => {};
 
 /** The photo's overlay as a standalone SVG, sized for the full photo (no zoom). */
-export function MockupSvg({ display, view, night, items, cables }: { display: Display; view: PhotoView } & PictureOptions) {
+export function MockupSvg({ display, view, night, items, cables, numbers }: { display: Display; view: PhotoView } & PictureOptions) {
   // As if the whole photo were shown about 1400 px wide: bulbs and labels stay readable.
   const u = Math.max(view.width, view.height) / 1400;
   const placed: { node: DisplayNode; placement: Placement }[] = [];
@@ -55,6 +68,20 @@ export function MockupSvg({ display, view, night, items, cables }: { display: Di
             <Marker key={node.id} node={node} at={toPx([placement.x, placement.y], view)} r={17 * u} u={u} selected={false} target={false} dim={false} onDown={none} onMove={none} onUp={none} />
           ) : null,
         )}
+      {numbers &&
+        placed.map(({ node, placement }) => {
+          const n = numbers[node.id];
+          if (n === undefined) return null;
+          const [x, y] = badgeAt(placement, view, u);
+          return (
+            <g key={`n-${node.id}`} transform={`translate(${x} ${y})`}>
+              <circle r={12 * u} fill="#1d4ed8" stroke="#ffffff" strokeWidth={2.5 * u} />
+              <text y={4.5 * u} fontSize={13 * u} textAnchor="middle" fontWeight={800} fill="#ffffff" fontFamily="system-ui, sans-serif">
+                {n}
+              </text>
+            </g>
+          );
+        })}
     </svg>
   );
 }

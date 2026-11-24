@@ -414,3 +414,24 @@ describe('swapping ends, measuring, remembered looks', () => {
     expect(synced.result.display.lightLooks?.c9?.bulbColors).toEqual(['#3a8bff']);
   });
 });
+
+describe('cords that no longer reach', () => {
+  it('flags the cord when a strand is dragged away after it was sized, and says what fits', async () => {
+    const { takeoff } = await import('../export/takeoff');
+    const v = { ...view, feetPerPx: 0.05 };
+    let d = addView(buildDisplay('O01 Porch\nL01 C9 roofline run\n', { id: 'x' }).display, v).display;
+    d = setPlacement(d, 'O01', 'v1', { kind: 'point', x: 0.1, y: 0.5 }).display;
+    d = setPlacement(d, 'L01', 'v1', { kind: 'path', points: [[0.3, 0.5], [0.5, 0.5]] }).display; // 400 px = 20 ft away
+    const r = plugOnPhoto(d, v, 'L01', { parent: 'O01' });
+    expect(r.cordFt).toBe(25);
+    expect(wiringLines(r.display, v)[0].short).toBeUndefined(); // sized to fit
+    // Drag the strand 300 px (15 ft) further: 35 ft gap, needs ~42 ft; a 50 ft cord fits.
+    const moved = setPlacement(r.display, 'L01', 'v1', { kind: 'path', points: [[0.45, 0.5], [0.65, 0.5]] }).display;
+    expect(wiringLines(moved, v)[0].short).toEqual({ have: 25, need: 42, fix: 50 });
+    const check = takeoff(moved)[0];
+    expect(check.title).toBe('Check these cords');
+    expect(check.lines[0]).toMatchObject({ item: `${r.cordId} Green extension cord (25 ft)`, qty: 'needs ~42 ft', detail: 'to reach L01 on “Front” · use a 50 ft cord' });
+    // Without a scale nothing is flagged (lengths are unknown).
+    expect(wiringLines(moved, view)[0].short).toBeUndefined();
+  });
+});
