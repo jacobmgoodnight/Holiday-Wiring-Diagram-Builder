@@ -135,7 +135,7 @@ describe('JSON backup', () => {
 
   it('rejects things that are not backups, with a reason', () => {
     expect(() => parseBackup('nope')).toThrow(BackupError);
-    expect(() => parseBackup('{"format":"other"}')).toThrow(/not a Wiring Sketchpad backup/);
+    expect(() => parseBackup('{"format":"other"}')).toThrow(/not a Plug & Glow backup/);
     expect(() => parseBackup(JSON.stringify({ format: 'wiring-sketchpad-backup', version: 99, displays: [] }))).toThrow(/newer version/);
     const broken = makeBackup([rec()]);
     (broken.displays[0].display.nodes.C02 as { label: unknown }).label = 5;

@@ -185,7 +185,7 @@ test('a file that is not a backup is refused with a reason', async ({ page }) =>
   await page.goto('./');
   await expect(page.getByRole('combobox', { name: 'Display' })).toBeVisible();
   await page.getByLabel('Backup file').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
-  await expect(page.locator('.toast')).toContainText('not a Wiring Sketchpad backup');
+  await expect(page.locator('.toast')).toContainText('This is not a Plug & Glow backup');
 });
 
 test('one-click Back up button downloads the same backup', async ({ page }) => {

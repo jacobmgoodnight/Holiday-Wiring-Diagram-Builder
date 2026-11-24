@@ -96,6 +96,8 @@ import { Palette } from './ui/Palette';
 import { PresetPicker } from './ui/PresetPicker';
 import { Sheet } from './ui/Sheet';
 import { ThemeButton } from './ui/ThemeButton';
+import { Brand } from './ui/Brand';
+import { BRAND } from './brand';
 import { SyncSheet, ago } from './ui/SyncSheet';
 import { syncServer } from './sync/api';
 import { normalizeCode } from './sync/code';
@@ -1223,6 +1225,7 @@ export function App() {
   };
 
   if (!doc || !layout || !display || !hist) return <div className="loading">Loading…</div>;
+  document.title = `${display.title} · ${BRAND.name}`;
 
   const title = display.title;
   // The item or preset being drawn on the photo, for its live preview and light options.
@@ -1343,6 +1346,7 @@ export function App() {
     <div className={`app${phone && mode === 'photo' && intent ? ' photo-focus' : ''}`}>
       <header className="bar">
         <div className="bar-title">
+          <Brand />
           <select aria-label="Display" value={doc.id} onChange={(e) => void switchTo(e.target.value)} disabled={!persist.current}>
             {options.map((d) => (
               <option key={d.id} value={d.id}>

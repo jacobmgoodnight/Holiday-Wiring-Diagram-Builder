@@ -58,7 +58,7 @@ export function parseBackup(text: string): Backup {
   } catch {
     throw new BackupError('This file is not JSON.');
   }
-  if (!isObj(data) || data.format !== BACKUP_FORMAT) throw new BackupError('This is not a Wiring Sketchpad backup.');
+  if (!isObj(data) || data.format !== BACKUP_FORMAT) throw new BackupError('This is not a Plug & Glow backup (or one from Wiring Sketchpad, its old name).');
   if (typeof data.version !== 'number' || data.version > BACKUP_VERSION) {
     throw new BackupError('This backup was made by a newer version of the app.');
   }

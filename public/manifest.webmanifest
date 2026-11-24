@@ -1,15 +1,27 @@
 {
-  "name": "Wiring Sketchpad",
-  "short_name": "Wiring",
-  "description": "Sketch holiday display power wiring as an outline and a diagram.",
+  "name": "Plug & Glow: holiday light planner",
+  "short_name": "Plug & Glow",
+  "description": "Plan holiday lights on a photo of your house: what plugs into what, what to buy, labels, and putting it up and taking it down.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
   ]
 }

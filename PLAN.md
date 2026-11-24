@@ -617,3 +617,13 @@ Decisions:
   a display that already exists; merging rows into a live plan could silently rewire it.
 * **D54. The device file is export-only and versioned.** Readers should check `format` and
   `version`; watts and amps are as entered, never estimated.
+
+## Name and brand
+
+* **Plug & Glow** ("Plan the lights. Plan the power."), formerly Wiring Sketchpad. The name is
+  in `src/brand.ts`; the header shows the logo and name (logo only on phones); the page title
+  follows the open display. Internal names stay as they were so nothing breaks: storage keys
+  (`wiring-sketchpad.*`), the backup and workbook format ids, the sync salt, and the
+  repository and its web address.
+* **Logo**: a C9 bulb glowing on a green cord with a plug (`public/icon.svg`; PNG icons are
+  rendered from it, square, so phones round the corners themselves).
