@@ -21,6 +21,7 @@ import {
   LOAD_CATEGORIES,
   type Link,
   type LoadCategory,
+  type Marks,
   NODE_KINDS,
   type NodeKind,
   type Season,
@@ -30,6 +31,7 @@ import {
   type Status,
 } from '../model/types';
 import { type Cell, type Sheet, readXlsx, writeXlsx } from './xlsx';
+import { TIE_COLORS } from './labels';
 
 export const WORKBOOK_FORMAT = 'wiring-sketchpad-items';
 export const WORKBOOK_VERSION = 1;
@@ -65,6 +67,11 @@ export const WORKBOOK_COLUMNS = [
   'packed',
   'signal_from',
   'notes',
+  'story',
+  'tie_color',
+  'label_text',
+  'no_label',
+  'label_printed',
 ] as const;
 
 type Column = (typeof WORKBOOK_COLUMNS)[number];
@@ -112,6 +119,11 @@ function itemRow(display: Display, n: DisplayNode): Cell[] {
     packed: yes(n.packed),
     signal_from: signalFrom || undefined,
     notes: n.notes,
+    story: n.story,
+    tie_color: n.tieColor,
+    label_text: n.labelText,
+    no_label: yes(n.labelSkip),
+    label_printed: yes(n.labelPrinted),
   };
   return WORKBOOK_COLUMNS.map((c) => values[c]);
 }
@@ -147,6 +159,8 @@ export function displaySheetRows(display: Display): Cell[][] {
     ['year', display.year],
     ['format', WORKBOOK_FORMAT],
     ['version', WORKBOOK_VERSION],
+    ['zip_tie_colors', display.marks?.colors ? 'yes' : 'no'],
+    ['zip_ties_per_story', display.marks?.stories ? 'yes' : 'no'],
     ['note', 'Items and wiring only. Photos and light looks are in the JSON backup.'],
   ];
 }
@@ -187,6 +201,21 @@ function findSheet(sheets: Sheet[], name: string): Sheet | undefined {
 
 const normHeader = (h: Cell) => str(h).toLowerCase().replace(/[\s-]+/g, '_');
 
+/** The zip-tie switches from the Display sheet (both off when missing). */
+function marksFrom(sheets: Sheet[]): Marks | undefined {
+  const info = new Map<string, Cell>();
+  for (const r of findSheet(sheets, DISPLAY_SHEET)?.rows.slice(1) ?? []) if (r && str(r[0])) info.set(normHeader(r[0]), r[1]);
+  const colors = truthy(info.get('zip_tie_colors')) || undefined;
+  const stories = truthy(info.get('zip_ties_per_story')) || undefined;
+  return colors || stories ? { colors, stories } : undefined;
+}
+
+/** A tie colour typed as a name ("Red") becomes the colour id ("red"). */
+const tieColorFrom = (v: Cell) => {
+  const s = str(v).toLowerCase();
+  return s ? (TIE_COLORS.find((c) => c.id === s || c.name.toLowerCase() === s)?.id ?? s) : undefined;
+};
+
 function titleFrom(sheets: Sheet[], fallback: string): { title: string; season: Season; year?: number } {
   const info = new Map<string, Cell>();
   for (const r of findSheet(sheets, DISPLAY_SHEET)?.rows.slice(1) ?? []) if (r && str(r[0])) info.set(str(r[0]).toLowerCase(), r[1]);
@@ -222,6 +251,8 @@ export function workbookToDisplay(data: Uint8Array, id: string, fallbackTitle = 
     links: [],
     comments: [{ id: 'c-title', parent: null, seq: -1, text: `# ${title}` }],
   };
+  const marks = marksFrom(sheets);
+  if (marks) display.marks = marks;
 
   interface Pending {
     row: number;
@@ -313,6 +344,14 @@ export function workbookToDisplay(data: Uint8Array, id: string, fallbackTitle = 
       retired: truthy(get(row, 'retired')) || undefined,
       packed: truthy(get(row, 'packed')) || undefined,
       endFemale: falsy(get(row, 'end_female')) ? false : undefined,
+      story: (() => {
+        const v = numberCell(get(row, 'story')).value;
+        return v !== undefined && v >= 2 ? Math.round(v) : undefined;
+      })(),
+      tieColor: tieColorFrom(get(row, 'tie_color')),
+      labelText: str(get(row, 'label_text')) || undefined,
+      labelSkip: truthy(get(row, 'no_label')) || undefined,
+      labelPrinted: truthy(get(row, 'label_printed')) || undefined,
     };
     for (const k of Object.keys(node) as (keyof DisplayNode)[]) if (node[k] === undefined) delete node[k];
     display.nodes[nid] = node;

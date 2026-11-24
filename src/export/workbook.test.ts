@@ -128,6 +128,31 @@ describe('Excel export and import', () => {
     });
   }
 
+  it('carries the label setup: stories, outlet tie colours, label text, left out, printed, and the zip-tie switches', () => {
+    let source: Display = { ...halloween(), marks: { colors: true, stories: true } };
+    source = updateNode(source, 'O01', { tieColor: 'red' }).display;
+    source = updateNode(source, 'C02', { story: 2, labelText: 'Porch to splitter', labelPrinted: true }).display;
+    source = updateNode(source, 'S02', { labelSkip: true }).display;
+    const { display } = workbookToDisplay(displayToWorkbook(source), 'imported');
+    expect(display.marks).toEqual({ colors: true, stories: true });
+    expect(display.nodes.O01.tieColor).toBe('red');
+    expect(display.nodes.C02).toMatchObject({ story: 2, labelText: 'Porch to splitter', labelPrinted: true });
+    expect(display.nodes.S02.labelSkip).toBe(true);
+    // Through the outline (as saving does): still there.
+    const synced = syncFromModel(display).result.display;
+    expect(synced.marks).toEqual({ colors: true, stories: true });
+    expect(synced.nodes.C02.story).toBe(2);
+    // Typed by hand: a colour name works too.
+    const typed = workbookToDisplay(
+      writeXlsx([{ name: 'Items', rows: [['name', 'kind', 'tie_color', 'story'], ['Porch outlet', 'outlet', 'Blue', ''], ['Wreath', 'load', '', '2']] }]),
+      'typed',
+    ).display;
+    expect(Object.values(typed.nodes).map((n) => [n.label, n.tieColor, n.story])).toEqual([
+      ['Porch outlet', 'blue', undefined],
+      ['Wreath', undefined, 2],
+    ]);
+  });
+
   it('writes one row per item plus written unused sockets, in diagram order', () => {
     const d = halloween();
     const rows = itemsRows(d);
