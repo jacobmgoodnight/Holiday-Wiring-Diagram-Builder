@@ -12,7 +12,7 @@ import { PictureSheet } from './Picture';
 
 /** Light styles offered by "Draw lights" (built-in presets): along the house, and on bushes. */
 const RUN_PRESETS = ['c9', 'c9stringer', 'mini', 'icicle', 'pathway'];
-const AREA_PRESETS = ['net', 'bushmini', 'tree'];
+const AREA_PRESETS = ['net', 'bushmini', 'tree', 'megatree'];
 
 interface Props {
   display: Display;
@@ -49,12 +49,15 @@ interface Props {
   onSplice: (runId: string, along: number) => void;
   onMoveTap: (runId: string, index: number, along: number) => void;
   onRemoveFemale: (runId: string, index: number) => void;
+  onToggleInstalled: (id: string) => void;
   /** Add extension cords automatically when a strand does not reach. */
   autoCords: boolean;
   onToggleAutoCords: () => void;
   /** Open the shopping list for this photo. */
   onShoppingList: (viewId: string) => void;
   onRenameView: (name: string) => void;
+  /** Open the printable install sheet for this photo. */
+  onInstallSheet: (viewId: string) => void;
   blocked?: Set<string>;
   fitKey: string;
   /** Phone: the selection bar replaces the photo actions while something is selected. */
@@ -139,6 +142,16 @@ export function PhotoPane(props: Props) {
           <button type="button" aria-pressed={props.intent?.type === 'scale'} className={view.feetPerPx ? 'on' : ''} onClick={() => props.setIntent({ type: 'scale' })} title="Measure: set the photo's scale">
             📏 {view.feetPerPx ? 'Scale set' : 'Measure'}
           </button>
+          <button
+            type="button"
+            aria-pressed={props.intent?.type === 'install'}
+            className={props.intent?.type === 'install' ? 'on' : ''}
+            onClick={() => props.setIntent(props.intent?.type === 'install' ? undefined : { type: 'install' })}
+            title="Install mode: tap each item as you put it up"
+            aria-label="Install mode"
+          >
+            ✅
+          </button>
           <button type="button" onClick={() => setSheet('picture')} title="Save the photo with its lights as a picture" aria-label="Save picture">
             📸
           </button>
@@ -164,6 +177,16 @@ export function PhotoPane(props: Props) {
                 }}
               >
                 🧾 Shopping list…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  closeMenu(e);
+                  props.onInstallSheet(view.id);
+                }}
+              >
+                🖨 Install sheet…
               </button>
               <label className="menu-check" role="menuitemcheckbox" aria-checked={props.autoCords}>
                 <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />
@@ -214,6 +237,7 @@ export function PhotoPane(props: Props) {
         onSplice={props.onSplice}
         onMoveTap={props.onMoveTap}
         onRemoveFemale={props.onRemoveFemale}
+        onToggleInstalled={props.onToggleInstalled}
         blocked={props.blocked}
         night={night}
         wiring={wiring}
@@ -274,7 +298,7 @@ export function PhotoPane(props: Props) {
                     <button
                       type="button"
                       className="tile-main"
-                      aria-label={g.area ? `Light a bush with ${p.name}` : `Draw ${p.name}`}
+                      aria-label={g.area && p.id !== 'megatree' ? `Light a bush with ${p.name}` : `Draw ${p.name}`}
                       onClick={() => {
                         setSheet(null);
                         props.setIntent({ type: 'draw', presetId: p.id, name: p.name, area: g.area });

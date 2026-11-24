@@ -1,0 +1,9 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:4173",
+      "localStorage": [{ "name": "wiring-sketchpad.safety", "value": "{\"editsSinceBackup\":0,\"iosTipDone\":true,\"snoozeUntil\":32503680000000}" }]
+    }
+  ]
+}

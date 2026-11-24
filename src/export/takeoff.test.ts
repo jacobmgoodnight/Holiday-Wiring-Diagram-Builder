@@ -95,3 +95,15 @@ describe('shopping list for one photo', () => {
     ]);
   });
 });
+
+describe('mega tree', () => {
+  it('counts strands and their length from the photo', () => {
+    const v: PhotoView = { id: 'v1', name: 'Front', photoId: 'p', width: 1000, height: 1000, feetPerPx: 0.05 };
+    let d = addView(buildDisplay('O01 Porch\n  L01 Mega tree\n', { id: 'm' }).display, v).display;
+    // Top at y = 100, base from x = 300 to 700 at y = 500: 400 px = 20 ft of slant.
+    d = setPlacement(d, 'L01', 'v1', { kind: 'area', points: [[0.5, 0.1], [0.3, 0.5], [0.7, 0.5]] }).display;
+    expect(takeoff(d)).toEqual([
+      { title: 'Bushes and trees', lines: [{ item: 'Mega tree · Warm white', qty: '16 strands', detail: '~20 ft each ≈ 320 ft of lights', ids: ['L01'] }] },
+    ]);
+  });
+});

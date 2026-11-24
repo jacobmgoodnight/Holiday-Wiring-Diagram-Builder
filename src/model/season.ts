@@ -77,13 +77,13 @@ export function compareDisplays(before: Display, after: Display): Change[] {
 export interface SnapshotMeta {
   id: number;
   at: number;
-  reason: 'auto' | 'manual' | 'before-restore';
+  reason: 'auto' | 'manual' | 'before-restore' | 'sync';
 }
 
 /** Snapshot ids to delete: keep every manual one and the newest `keepAuto` others. */
 export function snapshotsToPrune(list: SnapshotMeta[], keepAuto = 20): number[] {
   return list
-    .filter((s) => s.reason !== 'manual')
+    .filter((s) => s.reason !== 'manual' && s.reason !== 'sync')
     .sort((a, b) => b.at - a.at)
     .slice(keepAuto)
     .map((s) => s.id);

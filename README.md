@@ -40,10 +40,17 @@ data model, phases and the decisions that need your review.
     from that item. Something added with **+ Add item** asks what it plugs into right away.
     Cables take the colour of the cord in between (and name it, "C01"); they attach at the
     end female or the nearest point of a light run.
-  * **🧲 Follow edges** (on while drawing, remembered): each tap snaps to the nearest edge in
-    the photo and the run follows the edge between taps, so tapping the roof's corners
-    (eaves and peak) traces the roof line. It stays close to the straight line between taps
-    and keeps it where the photo has no clear edge. "Undo point" takes back a traced stretch.
+  * **🧲 Follow edges** (on while drawing, remembered): tap the roof's corners (eaves and
+    peak) and the run lands on the roof edge between them, even if your taps are a little
+    off. It ends on the edge nearest each tap (at the corner when you tap beside it), stays on
+    one edge instead of hopping between the drip edge and the trim board, draws straight roof
+    edges as straight lines, and keeps your line where the photo has no clear edge. "Undo
+    point" takes back a traced stretch.
+  * **Shapes** (while drawing): **▭ Outline** a window or door from two corners, **⌒ Arch**
+    from three taps, **🌀 Wrap** a post or trunk, and a **Mega tree** fans its strands from
+    the top.
+  * **Phones**: press and hold to get a magnifier, and the point lands where you let go.
+    While you draw or place, the photo gets the whole screen.
   * **Several photos** (front, back, sides): rename each from the photo's ⋯ menu; the
     shopping list can show everything or just what one photo needs (its items and the cords
     and gear feeding them).
@@ -82,17 +89,32 @@ data model, phases and the decisions that need your review.
   that shows on the diagram.
 * **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
   boxes. Ticks update the same plan the diagram shows.
+* **Install day**: **✅ Install mode** on the photo walks through the plug-in order (Next
+  step, "✓ L02 is up"). **Install sheet** (⋯ menu, or the photo's ⋯) prints or saves as PDF
+  the photo with numbered items, the plug-in order as numbered steps with boxes to tick, and
+  what to buy.
+* **Cords that no longer reach**: once a photo is measured, an extension cord too short for
+  the gap it spans is drawn red and dashed with "needs ~42 ft", and one tap swaps in a long
+  enough one. The shopping list starts with these.
 * **Shopping list** (⋯ menu, or the photo's ⋯): feet of lights by type, colour and spacing
   (bulb counts for C9s and stakes, plus 10% for corners), bushes with net counts, zip cord
   and its females, extension cords by length, gear and props. Lengths come from each item,
   or from the measured photo (~). "Only items marked New this year" lists what to buy.
   Copy as text or download a CSV; tap an ID to jump to that item.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
-  Cord and plug labels, Shopping list, Download items as CSV, Back up all displays (JSON), Import a backup,
-  Delete.
+  Cord and plug labels, Shopping list, Install sheet, Download items as CSV, Sync with other
+  devices, Back up all displays (JSON), Import a backup, Delete.
 * **My presets**: "Save as preset" on any item; it then shows in the picker.
-* **Back up regularly** (⋯ → Back up all displays). Everything lives only in this browser,
-  and clearing site data deletes it. Nothing is uploaded.
+* **Back up regularly** (⋯ → Back up all displays). Everything lives in this browser, and
+  clearing site data deletes it; after a fair amount of work the app reminds you to back up.
+  On iPhone, add it to the Home Screen so Safari keeps your plans (the app shows a one-time
+  tip). When a new version is published, a note offers to reload.
+* **Sync with other devices** (⋯ menu): turn it on and
+  type the code on your other device, or open the sync link there. Plans and photos are
+  scrambled (end-to-end encrypted) on your device before they are sent, with the code as the
+  key; the server keeps only the scrambled copy and cannot read it. No account, no
+  password, so keep the code private. An edit made on both devices at once keeps the other
+  version in Restore points. **Nothing leaves your device unless you turn sync on.**
 * Phones open one outlet at a time; tap **Overall** for everything. **Fit** never shrinks
   text below readable size; pan instead.
 * After the first visit it works offline, and can be added to the iPhone home screen.

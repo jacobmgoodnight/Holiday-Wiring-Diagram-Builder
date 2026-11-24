@@ -27,6 +27,8 @@ import { type Change, compareDisplays, copyForNextYear, nextTitle } from './mode
 import { type History, initHistory, push, redo, undo } from './model/history';
 import type { Display, DisplayNode, NodeKind, Placement } from './model/types';
 import { type BuildResult, buildDisplay } from './outline';
+import { isIosBrowserTab, keepStorage, noteBackup, noteEdit, readSafety, shouldNudgeBackup, shouldShowIosTip, snoozeBackup, writeSafety } from './store/safety';
+import { newVersionAvailable } from './store/update';
 import { syncFromModel } from './outline/sync';
 import { presetFromNode, presetText, suggest } from './presets/custom';
 import { PRESETS, type Preset, presetById } from './presets/presets';
@@ -62,6 +64,7 @@ import { HelpSheet } from './ui/HelpSheet';
 import { NodePanel } from './ui/NodePanel';
 import { SelectionBar } from './ui/SelectionBar';
 import { ShoppingSheet } from './ui/ShoppingSheet';
+import { InstallSheet } from './ui/InstallSheet';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
 import {
@@ -78,7 +81,7 @@ import {
   swapEnds,
   updateView,
 } from './photo/actions';
-import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt } from './photo/geometry';
+import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt, wiringLines } from './photo/geometry';
 import { type LightOpts, lightPatch } from './photo/LightOptions';
 import { applyLookToAll, rememberLook, sameKind, withLook } from './photo/lightOpts';
 import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
@@ -88,6 +91,12 @@ import { Palette } from './ui/Palette';
 import { PresetPicker } from './ui/PresetPicker';
 import { Sheet } from './ui/Sheet';
 import { ThemeButton } from './ui/ThemeButton';
+import { SyncSheet, ago } from './ui/SyncSheet';
+import { syncServer } from './sync/api';
+import { normalizeCode } from './sync/code';
+import type { SyncOutcome } from './sync/engine';
+import { useSync } from './sync/useSync';
+import { isUntouchedExample } from './sync/example';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
 const OVERALL = '__overall__';
@@ -223,6 +232,18 @@ export function App() {
   const phone = usePhone();
   const [moving, setMoving] = useState<string | undefined>();
   const [toast, setToast] = useState<Toast | null>(null);
+  /** Backup reminder and iPhone tip state (this device). */
+  const [safety, setSafety] = useState(readSafety);
+  const updateSafety = (fn: (s: ReturnType<typeof readSafety>) => ReturnType<typeof readSafety>) =>
+    setSafety((s) => {
+      const next = fn(s);
+      writeSafety(next);
+      return next;
+    });
+  const askedToKeep = useRef(false);
+  const iosTab = useMemo(() => isIosBrowserTab(), []);
+  /** A newer version of the app has been published. */
+  const [updateReady, setUpdateReady] = useState(false);
   /** In-page confirmation (browser confirm() is unavailable in some viewers and jarring on phones). */
   const [ask, setAsk] = useState<{ title: string; message: string; confirm: string; resolve: (ok: boolean) => void } | null>(null);
   const confirmInApp = (title: string, message: string, confirm: string) =>
@@ -251,9 +272,21 @@ export function App() {
   const lastAuto = useRef(new Map<string, number>());
   const [custom, setCustom] = useState<Preset[]>([]);
   const [labelsOpen, setLabelsOpen] = useState(false);
+  /** The printable install sheet, for the whole plan or one photo. */
+  const [installSheet, setInstallSheet] = useState<{ viewId?: string } | null>(null);
   /** The shopping list, for the whole plan or one photo. */
   const [shopping, setShopping] = useState<{ viewId?: string } | null>(null);
   const shoppingOpen = !!shopping;
+  /** Sync with other devices (a code from a #sync= link offers to join it). */
+  const [syncOpen, setSyncOpen] = useState<{ link?: string } | null>(null);
+  const server = useMemo(syncServer, []);
+  /** The plans have loaded (sync starts then). */
+  const [booted, setBooted] = useState(false);
+  /** Goes up with every edit, so a sync can tell the user edited while it ran. */
+  const editSeq = useRef(0);
+  const syncSoon = useRef<() => void>(() => undefined);
+  /** Photos arrived by sync: look for missing ones again. */
+  const [photoNonce, setPhotoNonce] = useState(0);
   const importInput = useRef<HTMLInputElement>(null);
   const refreshCustom = useCallback(async () => {
     if (persist.current) setCustom(await listCustomPresets());
@@ -324,6 +357,7 @@ export function App() {
       }
       await refreshList();
       await refreshCustom();
+      setBooted(true);
     })().catch(() => {
       persist.current = false;
       setSave('unavailable');
@@ -347,6 +381,7 @@ export function App() {
         if (draft && draft.id === d.id && draft.text === d.text) writeDraft(null);
       }
       void refreshList();
+      syncSoon.current();
     } catch {
       setSave('failed');
     }
@@ -362,6 +397,7 @@ export function App() {
   }, [flush]);
   const scheduleSave = (d: Doc) => {
     if (!persist.current) return;
+    editSeq.current++;
     writeDraft({ id: d.id, text: d.text, at: Date.now() });
     pending.current = d;
     setSave('saving');
@@ -392,7 +428,32 @@ export function App() {
     // Never apply an edit to a different display than the one it was made in.
     setHist((h) => (h && h.present.id === next.id ? push(h, next, { coalesceKey }) : h));
     scheduleSave(next);
+    if (persist.current) {
+      updateSafety((s) => noteEdit(s, now));
+      // Ask the browser to keep this site's data, once a session, right after a real edit.
+      if (!askedToKeep.current) {
+        askedToKeep.current = true;
+        void keepStorage();
+      }
+    }
   };
+
+  // Notice when a newer version has been published (production builds only).
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    let live = true;
+    const check = () => void newVersionAvailable().then((yes) => live && yes && setUpdateReady(true));
+    const first = window.setTimeout(check, 3000);
+    const every = window.setInterval(check, 30 * 60 * 1000);
+    const onShow = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      live = false;
+      window.clearTimeout(first);
+      window.clearInterval(every);
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, []);
 
   const editText = (text: string) => {
     if (!doc) return;
@@ -494,7 +555,7 @@ export function App() {
           doRedo();
         }
       }
-      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || (phone && detailsOpen));
+      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || installSheet || syncOpen || (phone && detailsOpen));
       if (e.key === 'Escape' && !picker && !photoPicker && !sheetOpen) {
         if (findOpen) setFindOpen(false);
         else if (intent) setIntent(undefined);
@@ -550,9 +611,10 @@ export function App() {
       loadingPhotos.current.add(v.photoId);
       void getPhoto(v.photoId).then((p) => {
         if (p) setPhotoUrls((m) => ({ ...m, [v.photoId]: URL.createObjectURL(p.blob) }));
+        else loadingPhotos.current.delete(v.photoId); // may still arrive by sync
       });
     }
-  }, [display?.views, photoUrls]);
+  }, [display?.views, photoUrls, photoNonce]);
   const views = display?.views ?? [];
   const photoView = views.find((v) => v.id === viewId) ?? views[0];
   const clusters = useMemo(() => (display ? clusterList(display) : []), [display]);
@@ -658,6 +720,7 @@ export function App() {
       if (persist.current) await saveDisplay(toStored(d.text, d.result.display, d.result.lineNodeIds));
       open(d);
       await refreshList();
+      syncSoon.current();
     });
 
   const switchTo = (id: string) =>
@@ -696,6 +759,7 @@ export function App() {
       if (persist.current) await saveDisplay(toStored(d.text, d.result.display, d.result.lineNodeIds));
       open(d);
       await refreshList();
+      syncSoon.current();
       showToast(`Copied. "${title}" starts with everything planned.`);
     });
 
@@ -748,6 +812,7 @@ export function App() {
     const backup = makeBackup(await allDisplays(), new Date(), await exportBackupPhotos());
     const day = new Date().toISOString().slice(0, 10);
     downloadText(JSON.stringify(backup, null, 1), `wiring-sketchpad-backup-${day}.json`, 'application/json');
+    updateSafety((s) => noteBackup(s, Date.now()));
     showToast(`Backup of ${backup.displays.length} display${backup.displays.length === 1 ? '' : 's'} downloaded. Keep it somewhere safe.`);
   };
 
@@ -762,6 +827,7 @@ export function App() {
       }
       for (const rec of planned) await saveDisplay(rec);
       await refreshList();
+      syncSoon.current();
       if (planned.length) await switchTo(planned[0].id);
       const copies = planned.filter((r) => r.title.endsWith('(imported)')).length;
       showToast(`Imported ${planned.length} display${planned.length === 1 ? '' : 's'}${copies ? `; ${copies} already here came in as copies` : ''}.`);
@@ -948,6 +1014,86 @@ export function App() {
     if (rest.length) await switchTo(rest[0].id);
     else await newDisplay();
     await refreshList();
+    syncSoon.current();
+  };
+
+  // ---- Sync with other devices ----
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  /** Show the other device's changes: reload or leave the open display, and say what came. */
+  const afterSync = async (o: SyncOutcome, editedDuring: boolean) => {
+    if (o.photosDown) setPhotoNonce((n) => n + 1);
+    if (!o.saved.length && !o.removed.length && !o.kept) return;
+    await refreshList();
+    const cur = docRef.current;
+    const messages: string[] = [];
+    if (cur && o.removed.includes(cur.id)) {
+      if (editedDuring) {
+        // Edited here meanwhile: keep it (it goes back to the cloud on the next sync).
+        pending.current = cur;
+        await flush();
+      } else {
+        const rest = await listDisplays();
+        if (rest.length) await switchTo(rest[0].id);
+        else await newDisplay();
+        messages.push(`"${cur.result.display.title}" was deleted on your other device.`);
+      }
+    } else if (cur && o.saved.includes(cur.id)) {
+      const rec = await getDisplay(cur.id);
+      if (editedDuring) {
+        // Keep the edit made here; the other device's version becomes a restore point.
+        if (rec) await addSnapshot({ ...snapshotOf(docFromStored(rec), 'sync') });
+        pending.current = docRef.current ?? cur;
+        await flush();
+        messages.push('Changes from your other device came in while you were editing: they are in Restore points.');
+      } else if (rec) {
+        const next = docFromStored(rec);
+        setHist(initHistory(next));
+        setSelected((s) => (s && next.result.display.nodes[s] ? s : undefined));
+        setMoving(undefined);
+        messages.push('Updated with changes from your other device.');
+      }
+    }
+    const others = o.saved.filter((id) => id !== cur?.id).length;
+    if (others) messages.push(`${others} other plan${others === 1 ? '' : 's'} updated from your other device.`);
+    if (o.kept) messages.push('Edited on both devices: the other version is saved in Restore points.');
+    if (messages.length) showToast(messages.join(' '));
+  };
+  const sync = useSync({ ready: booted && persist.current, server, beforeSync: flush, afterSync, editSeq });
+  syncSoon.current = sync.syncSoon;
+  // A sync link (#sync=CODE) offers to join; the code is taken out of the address at once.
+  useEffect(() => {
+    const m = /^#sync=(.+)$/.exec(location.hash);
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    const code = normalizeCode(decodeURIComponent(m[1]));
+    if (code && server) setSyncOpen({ link: code });
+  }, [server]);
+  /** Join with a code; this device's untouched starter example is dropped, not sent. */
+  const joinSync = async (code: string) => {
+    const dropped: string[] = [];
+    await sync.join(code, async (remote) => {
+      if (!Object.keys(remote.displays).length) return;
+      for (const rec of await allDisplays())
+        if (!remote.displays[rec.id] && isUntouchedExample(rec)) {
+          await deleteDisplay(rec.id);
+          dropped.push(rec.id);
+        }
+    });
+    await refreshList();
+    if (docRef.current && dropped.includes(docRef.current.id)) {
+      const rest = await listDisplays();
+      if (rest.length) await switchTo(rest[0].id);
+    }
+  };
+  const forgetCloud = async () => {
+    if (!(await confirmInApp('Delete the cloud copy', 'Delete the synced copy from the server? The plans on each device stay where they are, and sync turns off here.', 'Delete cloud copy'))) return;
+    try {
+      await sync.forget();
+      showToast('Cloud copy deleted. Sync is off on this device.');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not delete the cloud copy.');
+    }
   };
 
   if (!doc || !layout || !display || !hist) return <div className="loading">Loading…</div>;
@@ -1020,6 +1166,13 @@ export function App() {
             defaultArea={drawnAsLights(selNode) && drawsAsArea(selNode)}
             onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
             onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
+            short={selNode.kind === 'cord' ? wiringLines(display, photoView).find((l) => l.short && l.via.includes(selNode.id))?.short : undefined}
+            onFixShort={(ft) =>
+              act(
+                (d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: undefined }),
+                () => showToast(`${selNode.id} is now a ${ft} ft cord`, true),
+              )
+            }
           />
         ) : undefined
       }
@@ -1051,7 +1204,7 @@ export function App() {
   );
 
   return (
-    <div className="app">
+    <div className={`app${phone && mode === 'photo' && intent ? ' photo-focus' : ''}`}>
       <header className="bar">
         <div className="bar-title">
           <select aria-label="Display" value={doc.id} onChange={(e) => void switchTo(e.target.value)} disabled={!persist.current}>
@@ -1075,6 +1228,17 @@ export function App() {
                   ? 'Not saved: storage error'
                   : 'Not saving: storage unavailable'}
           </span>
+          {sync.state && (
+            <button
+              type="button"
+              className={`sync-dot${sync.status.busy ? ' busy' : sync.status.error ? ' bad' : ''}`}
+              aria-label={sync.status.busy ? 'Syncing' : sync.status.error ? 'Not synced: tap for details' : `Synced${sync.state.lastSyncAt ? ` ${ago(sync.state.lastSyncAt)}` : ''}`}
+              title={sync.status.error ? `Not synced: ${sync.status.error}` : 'Sync with your other devices'}
+              onClick={() => setSyncOpen({})}
+            >
+              ⇅
+            </button>
+          )}
           <button type="button" onClick={() => void newDisplay()} disabled={!persist.current}>
             New
           </button>
@@ -1101,9 +1265,17 @@ export function App() {
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
                 Shopping list…
               </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setInstallSheet({}); }}>
+                Install sheet (print or PDF)…
+              </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
                 Download items as CSV
               </button>
+              {(server || sync.state) && (
+                <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); setSyncOpen({}); }}>
+                  Sync with other devices…
+                </button>
+              )}
               <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); void exportBackup(); }}>
                 Back up all displays (JSON)
               </button>
@@ -1130,6 +1302,46 @@ export function App() {
           <ThemeButton />
         </div>
       </header>
+      {(() => {
+        // One notice at a time: an update first, then a backup reminder, then the iPhone tip.
+        if (updateReady)
+          return (
+            <div className="notice" role="status">
+              <span>A new version of the app is ready.</span>
+              <button type="button" className="primary" onClick={() => location.reload()}>
+                Reload
+              </button>
+              <button type="button" onClick={() => setUpdateReady(false)}>
+                Later
+              </button>
+            </div>
+          );
+        const syncedLately = !!sync.state?.lastSyncAt && Date.now() - sync.state.lastSyncAt < 14 * 24 * 60 * 60 * 1000;
+        if (persist.current && !syncedLately && shouldNudgeBackup(safety, Date.now()))
+          return (
+            <div className="notice" role="status">
+              <span>Your plans are only on this device. Back up so nothing is lost if the browser clears its data.</span>
+              <button type="button" className="primary" onClick={() => void exportBackup()}>
+                Back up now
+              </button>
+              <button type="button" onClick={() => updateSafety((s) => snoozeBackup(s, Date.now()))}>
+                Later
+              </button>
+            </div>
+          );
+        if (persist.current && shouldShowIosTip(safety, iosTab))
+          return (
+            <div className="notice" role="status">
+              <span>
+                On iPhone, add this app to your Home Screen so Safari keeps your plans: tap <b>Share</b>, then <b>Add to Home Screen</b>.
+              </span>
+              <button type="button" onClick={() => updateSafety((s) => ({ ...s, iosTipDone: true }))}>
+                Got it
+              </button>
+            </div>
+          );
+        return null;
+      })()}
 
       <nav className="views" aria-label="View">
         <div className="seg" role="group" aria-label="Mode">
@@ -1262,8 +1474,10 @@ export function App() {
               onSplice={spliceAt}
               onMoveTap={slideFemale}
               onRemoveFemale={dropFemale}
+              onToggleInstalled={(id) => act((d) => updateNode(d, id, { status: d.nodes[id]?.status === 'planned' ? 'installed' : 'planned' }))}
               autoCords={autoCords}
               onShoppingList={(viewId) => setShopping({ viewId })}
+              onInstallSheet={(viewId) => setInstallSheet({ viewId })}
               onRenameView={(name) => photoView && act((d) => updateView(d, photoView.id, { name }))}
               onToggleAutoCords={() => {
                 const next = !autoCords;
@@ -1414,6 +1628,26 @@ export function App() {
           onClose={() => setShopping(null)}
         />
       )}
+      {syncOpen && (
+        <SyncSheet
+          state={sync.state}
+          status={sync.status}
+          linkCode={syncOpen.link}
+          onTurnOn={sync.turnOn}
+          onJoin={joinSync}
+          onSyncNow={() => void sync.syncNow()}
+          onTurnOff={() => {
+            void sync.turnOff();
+            showToast('Sync is off on this device. Your plans stay here.');
+          }}
+          onForget={() => {
+            setSyncOpen(null);
+            void forgetCloud();
+          }}
+          onClose={() => setSyncOpen(null)}
+        />
+      )}
+      {installSheet && <InstallSheet display={display} photoUrls={photoUrls} initialViewId={installSheet.viewId} onClose={() => setInstallSheet(null)} />}
       {labelsOpen && (
         <LabelSheet
           display={display}
@@ -1520,12 +1754,25 @@ function PhotoNodeActions(props: {
   onSwapEnds: () => void;
   onRemove: () => void;
   onUseLength: (ft: number) => void;
+  /** A cord that no longer reaches on this photo (see WiringLine.short). */
+  short?: { have: number; need: number; fix?: number };
+  onFixShort: (ft: number) => void;
 }) {
-  const { placement, lengthFt, drawn, canBush, defaultArea } = props;
+  const { placement, lengthFt, drawn, canBush, defaultArea, short } = props;
   const ft = lengthFt !== undefined ? Math.round(lengthFt) : undefined;
   const area = placement && placement.kind !== 'point' ? placement.kind === 'area' : defaultArea;
   return (
     <>
+      {short &&
+        (short.fix ? (
+          <button type="button" className="danger-solid" onClick={() => props.onFixShort(short.fix!)}>
+            📏 Needs ~{short.need} ft: use a {short.fix} ft cord
+          </button>
+        ) : (
+          <span className="short-note">
+            The cords here add up to {short.have} ft; this gap needs about {short.need} ft.
+          </span>
+        ))}
       {drawn ? (
         <>
           <button type="button" className="primary" onClick={() => props.onDraw(area)}>

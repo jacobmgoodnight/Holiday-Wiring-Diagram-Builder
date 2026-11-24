@@ -5,9 +5,10 @@
  */
 import { clusterMembers } from '../diagram/layout';
 import { homeLink } from '../model/actions';
+import { MEGA_TREE_STRANDS } from '../photo/shapes';
 import { inlineFemales, isRun } from '../model/graph';
 import type { Display, DisplayNode } from '../model/types';
-import { PALETTES, areaSizeFt, areaStyle, bulbColors, bulbCount, drawnAsLights, paletteOf, runLengthFt, runStyle, spacingInOf } from '../photo/geometry';
+import { PALETTES, areaSizeFt, areaStyle, bulbColors, bulbCount, drawnAsLights, paletteOf, runLengthFt, runStyle, spacingInOf, wiringLines } from '../photo/geometry';
 
 export interface TakeoffLine {
   /** What to buy, e.g. "C9 bulbs · Warm white · 12″ apart". */
@@ -134,6 +135,23 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
   };
 
   for (const n of nodes) {
+    if (n.kind === 'load' && drawnAsLights(n) && onBush(n) && areaStyle(n) === 'fan') {
+      // A mega tree: strands from the top to the base, each as long as the tree's slant.
+      const v = views.find((x) => x.feetPerPx && n.placements?.[x.id]?.kind === 'area');
+      const pl = v ? n.placements![v.id] : undefined;
+      let slant: number | undefined;
+      if (v && pl?.kind === 'area' && pl.points.length >= 3) {
+        const [a, l, r] = pl.points.map((q) => [q[0] * v.width, q[1] * v.height]);
+        slant = Math.hypot((l[0] + r[0]) / 2 - a[0], (l[1] + r[1]) / 2 - a[1]) * v.feetPerPx!;
+      }
+      bushes.push({
+        item: `${n.label} · ${colorsName(bulbColors(n))}`,
+        qty: `${MEGA_TREE_STRANDS} strands`,
+        detail: slant ? `~${Math.round(slant)} ft each ≈ ${Math.round(slant * MEGA_TREE_STRANDS)} ft of lights` : 'measure the photo for the strand length',
+        ids: [n.id],
+      });
+      continue;
+    }
     if (n.kind === 'load' && drawnAsLights(n) && onBush(n)) {
       const size = views.map((v) => (n.placements?.[v.id] ? areaSizeFt(n.placements[v.id], v) : undefined)).find(Boolean);
       const net = areaStyle(n) === 'net';
@@ -201,6 +219,25 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
   }
 
   const sections: TakeoffSection[] = [];
+  // Cords that no longer reach (something was moved after they were sized): fix these first.
+  const short = new Map<string, TakeoffLine & { need: number }>();
+  for (const v of views) {
+    for (const l of wiringLines(display, v)) {
+      if (!l.short || (only && !only.has(l.childId))) continue;
+      const key = l.via.join('+');
+      if ((short.get(key)?.need ?? 0) >= l.short.need) continue;
+      const cords = l.via.map((id) => display.nodes[id]);
+      const item = cords.length === 1 ? `${cords[0].id} ${cords[0].label} (${l.short.have} ft)` : `${l.via.join(' + ')} (${l.short.have} ft together)`;
+      short.set(key, {
+        item,
+        qty: `needs ~${l.short.need} ft`,
+        detail: `to reach ${l.childId} on “${v.name}”${l.short.fix ? ` · use a ${l.short.fix} ft cord` : ''}`,
+        ids: [...l.via, l.childId],
+        need: l.short.need,
+      });
+    }
+  }
+  if (short.size) sections.push({ title: 'Check these cords', lines: [...short.values()].map(({ need: _n, ...line }) => line) });
   if (runs.size)
     sections.push({
       title: 'Lights along the house',
