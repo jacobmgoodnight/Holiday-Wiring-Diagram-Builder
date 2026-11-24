@@ -5,7 +5,7 @@ import { buildDisplay } from '../outline/build';
 import { toStored } from '../store/db';
 import { BackupError, makeBackup, parseBackup, planImport } from './backup';
 import { csvCell, displayToCsv } from './csv';
-import { assignTieColors, labelPrep, labelsFor, tiesFor, tiesText } from './labels';
+import { assignTieColors, labelCandidates, labelPrep, labelsFor, tiesFor, tiesText } from './labels';
 
 const halloween = readFileSync(new URL('../../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 const built = () => buildDisplay(halloween, { id: 'h26' });
@@ -55,6 +55,30 @@ describe('labels', () => {
     // What to get ready: C02's two ends need 2 ties each.
     const prep = labelPrep(labelsFor(d).filter((l) => l.id === 'C02' || l.id === 'K01'));
     expect(prep).toEqual({ labels: 3, ties: [{ color: colors.O01, count: 5 }] });
+  });
+
+  it('can say what you choose: name instead of length or place, or your own text', () => {
+    let d = built().display;
+    const skelly = Object.values(d.nodes).find((n) => n.label === '6.5-ft Ultra Skelly')!;
+    d = updateNode(d, skelly.id, { location: 'Front lawn left' }).display;
+    expect(labelsFor(d, { cordLine: 'name' }).find((l) => l.id === 'C02')!.sub).toBe('black cord');
+    expect(labelsFor(d, { lightLine: 'name' }).find((l) => l.id === skelly.id)!.sub).toBe('6.5-ft Ultra Skelly');
+    d = updateNode(d, 'C02', { labelText: 'Porch to splitter' }).display;
+    expect(labelsFor(d).find((l) => l.id === 'C02')!.text).toBe('C02 Porch to splitter');
+  });
+
+  it('picks which: one outlet or photo, new this year, not printed yet, and leaves out unticked items', () => {
+    let d = built().display;
+    const all = labelsFor(d);
+    expect(new Set(labelsFor(d, { ids: new Set(['C02', 'S02']) }).map((l) => l.id))).toEqual(new Set(['C02', 'S02']));
+    d = updateNode(d, 'S02', { isNew: true }).display;
+    expect(labelsFor(d, { only: 'new' }).map((l) => l.id)).toEqual(['S02']);
+    d = updateNode(d, 'K01', { labelPrinted: true }).display;
+    expect(labelsFor(d, { only: 'unprinted' }).some((l) => l.id === 'K01')).toBe(false);
+    d = updateNode(d, 'C02', { labelSkip: true }).display;
+    expect(labelsFor(d).some((l) => l.id === 'C02')).toBe(false);
+    expect(labelCandidates(d)).toContain('C02'); // still in the list to tick again
+    expect(labelsFor(d)).toHaveLength(all.length - 2); // both ends of C02
   });
 
   it('never hands out an ID again, so a printed label stays on the right item', () => {

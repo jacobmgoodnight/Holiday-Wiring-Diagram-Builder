@@ -320,7 +320,9 @@ export function App() {
   const [changes, setChanges] = useState<{ source: string | null; list: Change[] | null } | null>(null);
   const lastAuto = useRef(new Map<string, number>());
   const [custom, setCustom] = useState<Preset[]>([]);
-  const [labelsOpen, setLabelsOpen] = useState(false);
+  /** The label sheet, for everything, one photo ('view:…') or one item ('item:…'). */
+  const [labels, setLabels] = useState<{ scope?: string } | null>(null);
+  const labelsOpen = !!labels;
   /** The printable install sheet, for the whole plan or one photo. */
   const [installSheet, setInstallSheet] = useState<{ viewId?: string } | null>(null);
   /** The shopping list, for the whole plan or one photo. */
@@ -1269,6 +1271,7 @@ export function App() {
       below={childrenCount(selNode.id)}
       plugged={!!selParent}
       onPatch={(patch: NodePatch) => act((d) => updateNode(d, selNode.id, patch))}
+      onLabel={() => setLabels({ scope: `item:${selNode.id}` })}
       onKind={(kind: NodeKind) => act((d) => changeKind(d, selNode.id, kind), (r) => setSelected(r.nodeId))}
       onUnplug={() => act((d) => unplug(d, selNode.id), (r, next) => reveal(r.nodeId, next))}
       onDeleteBranch={() => {
@@ -1343,7 +1346,7 @@ export function App() {
                   Changes since last year…
                 </button>
               )}
-              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabelsOpen(true); }}>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabels({}); }}>
                 Labels and zip ties…
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
@@ -1495,6 +1498,7 @@ export function App() {
             }}
             onInstallSheet={(vid) => setInstallSheet({ viewId: vid })}
             onPrintDiagram={() => setDiagramPrint(true)}
+            onLabels={(vid) => setLabels({ scope: vid ? `view:${vid}` : '' })}
           />
         </main>
       ) : (
@@ -1576,6 +1580,7 @@ export function App() {
               autoCords={autoCords}
               onShoppingList={(viewId) => setShopping({ viewId })}
               onInstallSheet={(viewId) => setInstallSheet({ viewId })}
+              onLabels={(viewId) => setLabels({ scope: `view:${viewId}` })}
               onRenameView={(name) => photoView && act((d) => updateView(d, photoView.id, { name }))}
               onToggleAutoCords={() => {
                 const next = !autoCords;
@@ -1748,9 +1753,20 @@ export function App() {
       )}
       {diagramPrint && <DiagramPrint display={display} onClose={() => setDiagramPrint(false)} />}
       {installSheet && <InstallSheet display={display} photoUrls={photoUrls} initialViewId={installSheet.viewId} onClose={() => setInstallSheet(null)} />}
-      {labelsOpen && (
+      {labels && (
         <LabelSheet
           display={display}
+          initialScope={labels.scope}
+          onPatchMany={(ids, patch) =>
+            act(
+              (d) => {
+                let out = d;
+                for (const id of ids) if (out.nodes[id]) out = updateNode(out, id, patch).display;
+                return { display: out };
+              },
+              () => showToast(`Marked ${ids.length} label${ids.length === 1 ? '' : 's'} as printed`, true),
+            )
+          }
           onPatch={(id, patch) => act((d) => updateNode(d, id, patch))}
           onMarks={(m) =>
             act((d) => {
@@ -1761,7 +1777,7 @@ export function App() {
             })
           }
           onDownloadCsv={(csv) => downloadText(csv, `${fileSlug(title)}-labels.csv`, 'text/csv')}
-          onClose={() => setLabelsOpen(false)}
+          onClose={() => setLabels(null)}
         />
       )}
       {photoPicker && (

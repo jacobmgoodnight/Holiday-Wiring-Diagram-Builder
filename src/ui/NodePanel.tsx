@@ -34,6 +34,8 @@ interface Props {
   sameKindCount: number;
   /** Give all of them this look. */
   onLookAll: (opts: LightOpts) => void;
+  /** Print a label for just this item. */
+  onLabel?: () => void;
 }
 
 /** Text/number input that commits on blur or Enter; re-keyed when the stored value changes. */
@@ -146,7 +148,7 @@ const numOrUndef = (v: string): number | undefined | null => {
 };
 
 /** Details of the selected item. Its main actions live in the selection bar. */
-export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onDeleteBranch, onSaveAsPreset, onLook, sameKindCount, onLookAll }: Props) {
+export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onDeleteBranch, onSaveAsPreset, onLook, sameKindCount, onLookAll, onLabel }: Props) {
   const [saving, setSaving] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [presetIcon, setPresetIcon] = useState('');
@@ -260,7 +262,15 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
           />
           <Field label="Notes (not in the outline)" wide multiline value={node.notes ?? ''} onCommit={(v) => onPatch({ notes: v.trim() || undefined })} />
           <Field label="Watts (optional)" type="number" value={str(node.watts)} onCommit={num('watts')} />
+          {node.kind !== 'outlet' && (
+            <Field label="Label text (instead of length or place)" wide value={node.labelText ?? ''} placeholder="Porch to bushes, Bin 3…" onCommit={(v) => onPatch({ labelText: v.trim() || undefined })} />
+          )}
         </div>
+        {node.kind !== 'outlet' && onLabel && (
+          <button type="button" className="label-one" onClick={onLabel}>
+            🏷 Print a label for {node.id}
+          </button>
+        )}
       </details>
 
       {saving && (

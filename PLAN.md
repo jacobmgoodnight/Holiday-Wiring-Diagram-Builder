@@ -580,3 +580,9 @@ Decisions:
   reading anything.
 * **D51. Labels say what you need in your hand**, not the route: the route changes when you
   re-plan, the cord's length and where the lights go do not.
+* **Labels you can tune** (labels round, part 2): which (scope, new, not printed yet with
+  `labelPrinted`, per-item `labelSkip`), what they say (cord length or name, place or name,
+  per-item `labelText`), and the stock: Avery 5160 (3 × 10, 2⅝ × 1 in, top 0.5 in, left
+  0.1875 in, gap 0.125 in) and 5167 (4 × 20, 1¾ × ½ in, top 0.5 in, left 0.28125 in, gap
+  0.3125 in) laid out one sheet per page with `@page { margin: 0 }`, a start position, any
+  custom size, flags on anything wider than 2.2 in. Text scales with the label height.

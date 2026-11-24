@@ -70,7 +70,7 @@ test('labels: paper sheet prints only the labels; label-maker text and CSV', asy
 
   await sheet.getByLabel('Format').selectOption('maker');
   await sheet.getByRole('checkbox', { name: 'Where it plugs in' }).check();
-  await expect(sheet.getByLabel('Label text')).toContainText('C02 10 ft · into K01 left');
+  await expect(sheet.getByLabel('Label maker text')).toContainText('C02 10 ft · into K01 left');
   const dl = page.waitForEvent('download');
   await sheet.getByRole('button', { name: 'Download CSV for label software' }).click();
   expect((await dl).suggestedFilename()).toBe('halloween-2026-labels.csv');
@@ -111,6 +111,47 @@ test('labels: zip ties by outlet colour and story, where lights go; marks show o
   const step = page.getByRole('list', { name: 'Steps to put it up' }).locator('li', { hasText: 'L01' });
   await expect(step).toContainText('Plug L01 C9 roofline run into C01 (2nd story).');
   await expect(step.getByRole('img', { name: '2 red ties' })).toBeVisible();
+});
+
+test('labels: from the Install tab or one item; Avery sheets from any label; only what is not printed yet', async ({ page }) => {
+  await load(page, '# Sheets\nO01 Porch outlet\n  C01 green cord 25ft\n    L01 C9 roofline run\n  C02 black cord 10ft\n');
+  await page.getByRole('button', { name: 'Install', exact: true }).click();
+  await page.getByRole('button', { name: '🏷 Labels' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Labels' });
+  const prep = sheet.getByRole('status');
+  await expect(prep).toHaveText('5 labels'); // C01 and C02 both ends, L01
+
+  // An Avery 5160 sheet, starting at label 5 of a sheet already partly used.
+  await sheet.getByLabel('Format').selectOption('avery5160');
+  await sheet.getByLabel('Start at label number').fill('5');
+  await expect(sheet.locator('.label-sheet')).toHaveCount(1);
+  await expect(sheet.locator('.label-sheet .label.blank')).toHaveCount(4);
+  await expect(prep).toHaveText('5 labels on 1 sheet');
+
+  // Your own text, and leave one item out.
+  await sheet.getByText(/^Set up/).click();
+  await sheet.getByLabel('Label text for C02').fill('Porch to bushes');
+  await sheet.getByLabel('Label text for C02').press('Enter');
+  await expect(sheet.getByLabel('Label C02 Porch to bushes', { exact: true })).toHaveCount(2);
+  await sheet.getByRole('checkbox', { name: 'Label L01' }).uncheck();
+  await expect(prep).toHaveText('4 labels on 1 sheet');
+
+  // Printed: next time, only what has not been printed yet.
+  await sheet.getByRole('button', { name: '✓ Mark these as printed' }).click();
+  await sheet.getByRole('button', { name: 'Not printed yet' }).click();
+  await expect(prep).toHaveText('0 labels');
+  await sheet.getByRole('button', { name: 'Close labels' }).click();
+
+  // A cord added later gets its own label from its details.
+  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.locator('.react-flow__node[aria-label^="O01"]').click();
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add Extension cord', exact: true }).first().click();
+  const details = await openDetails(page, 'C03');
+  await details.getByText('More details').click();
+  await details.getByRole('button', { name: '🏷 Print a label for C03' }).click();
+  await expect(sheet.getByLabel('Labels for')).toHaveValue('item:C03');
+  await expect(sheet.locator('.label-sheet .label:not(.blank)')).toHaveCount(2); // both ends of C03
 });
 
 test('CSV of items', async ({ page }) => {
