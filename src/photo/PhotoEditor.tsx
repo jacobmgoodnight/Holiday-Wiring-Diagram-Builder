@@ -496,14 +496,18 @@ export function PhotoEditor(props: Props) {
             )}
 
             {lines.map((l) => {
-              const hot = selectedId === l.childId || selectedId === l.parentId;
+              const hot = selectedId === l.childId || selectedId === l.parentId || (!!selectedId && l.via.includes(selectedId));
               const d = cablePath(l.from, l.to);
               const sag = Math.min(Math.hypot(l.to[0] - l.from[0], l.to[1] - l.from[1]) * 0.18, 400);
               const mid: Pt = [(l.from[0] + l.to[0]) / 2, (l.from[1] + l.to[1]) / 2 + sag / 2];
               const len = l.lengthFt !== undefined && hot ? `~${Math.round(l.lengthFt)} ft` : '';
-              const via = [l.via.join(', '), len].filter(Boolean).join(' · ');
+              // A cord that no longer reaches says so, always.
+              const via = l.short
+                ? `${l.via.join(', ')} · ${l.short.have} ft, needs ~${l.short.need}`
+                : [l.via.join(', '), len].filter(Boolean).join(' · ');
+              const tag = l.via[0];
               return (
-                <g key={`w-${l.childId}`} className={`cable${hot ? ' hot' : ''}`} pointerEvents="none">
+                <g key={`w-${l.childId}`} className={`cable${hot ? ' hot' : ''}${l.short ? ' short' : ''}`} pointerEvents="none">
                   <path d={d} fill="none" stroke={hot ? '#f59e0b' : 'rgba(0,0,0,0.55)'} strokeWidth={(hot ? 6 : 4.2) * u} strokeLinecap="round" />
                   <path
                     className="wire-line"
@@ -514,11 +518,33 @@ export function PhotoEditor(props: Props) {
                     strokeWidth={2.4 * u}
                     strokeLinecap="round"
                   />
+                  {l.short && <path d={d} fill="none" stroke="#dc2626" strokeWidth={2.4 * u} strokeDasharray={`${6 * u} ${5 * u}`} strokeLinecap="round" />}
                   <rect x={l.from[0] - 3.5 * u} y={l.from[1] - 3.5 * u} width={7 * u} height={7 * u} rx={1.5 * u} fill={l.color} stroke="rgba(0,0,0,0.7)" strokeWidth={u} />
                   {via && (
-                    <g transform={`translate(${mid[0]} ${mid[1]})`}>
-                      <rect x={-(via.length * 3.7 + 6) * u} y={-8 * u} width={(via.length * 7.4 + 12) * u} height={15 * u} rx={4 * u} fill="rgba(255,255,255,0.92)" stroke={l.color} strokeWidth={u} />
-                      <text y={3.5 * u} fontSize={10.5 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
+                    <g
+                      transform={`translate(${mid[0]} ${mid[1]})`}
+                      pointerEvents={tag && !intent ? 'auto' : 'none'}
+                      className={tag ? 'cable-tag' : undefined}
+                      role={tag ? 'button' : undefined}
+                      aria-label={tag ? (l.short ? `${tag} is too short: ${l.short.have} ft, needs about ${l.short.need} ft` : `Select ${tag}`) : undefined}
+                      onPointerDown={(e) => tag && e.stopPropagation()}
+                      onPointerUp={(e) => {
+                        if (!tag) return;
+                        e.stopPropagation();
+                        props.onSelect(tag);
+                      }}
+                    >
+                      <rect
+                        x={-(via.length * 3.7 + 6) * u}
+                        y={-8 * u}
+                        width={(via.length * 7.4 + 12) * u}
+                        height={15 * u}
+                        rx={4 * u}
+                        fill={l.short ? '#fee2e2' : 'rgba(255,255,255,0.92)'}
+                        stroke={l.short ? '#dc2626' : l.color}
+                        strokeWidth={(l.short ? 1.5 : 1) * u}
+                      />
+                      <text y={3.5 * u} fontSize={10.5 * u} textAnchor="middle" fontWeight={700} fill={l.short ? '#7f1d1d' : '#0f172a'} fontFamily="ui-monospace, Menlo, monospace">
                         {via}
                       </text>
                     </g>

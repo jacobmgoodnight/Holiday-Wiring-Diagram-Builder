@@ -80,7 +80,7 @@ import {
   swapEnds,
   updateView,
 } from './photo/actions';
-import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt } from './photo/geometry';
+import { type Pt, drawnAsLights, drawnAsRun, drawsAsArea, runLengthFt, wiringLines } from './photo/geometry';
 import { type LightOpts, lightPatch } from './photo/LightOptions';
 import { applyLookToAll, rememberLook, sameKind, withLook } from './photo/lightOpts';
 import { base64ToBlob, blobToBase64, prepareImage } from './photo/image';
@@ -1060,6 +1060,13 @@ export function App() {
             defaultArea={drawnAsLights(selNode) && drawsAsArea(selNode)}
             onRemove={() => act((d) => setPlacement(d, selNode.id, photoView.id, null))}
             onUseLength={(ft) => act((d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: true }))}
+            short={selNode.kind === 'cord' ? wiringLines(display, photoView).find((l) => l.short && l.via.includes(selNode.id))?.short : undefined}
+            onFixShort={(ft) =>
+              act(
+                (d) => updateNode(d, selNode.id, { lengthFt: ft, lengthApprox: undefined }),
+                () => showToast(`${selNode.id} is now a ${ft} ft cord`, true),
+              )
+            }
           />
         ) : undefined
       }
@@ -1599,12 +1606,25 @@ function PhotoNodeActions(props: {
   onSwapEnds: () => void;
   onRemove: () => void;
   onUseLength: (ft: number) => void;
+  /** A cord that no longer reaches on this photo (see WiringLine.short). */
+  short?: { have: number; need: number; fix?: number };
+  onFixShort: (ft: number) => void;
 }) {
-  const { placement, lengthFt, drawn, canBush, defaultArea } = props;
+  const { placement, lengthFt, drawn, canBush, defaultArea, short } = props;
   const ft = lengthFt !== undefined ? Math.round(lengthFt) : undefined;
   const area = placement && placement.kind !== 'point' ? placement.kind === 'area' : defaultArea;
   return (
     <>
+      {short &&
+        (short.fix ? (
+          <button type="button" className="danger-solid" onClick={() => props.onFixShort(short.fix!)}>
+            📏 Needs ~{short.need} ft: use a {short.fix} ft cord
+          </button>
+        ) : (
+          <span className="short-note">
+            The cords here add up to {short.have} ft; this gap needs about {short.need} ft.
+          </span>
+        ))}
       {drawn ? (
         <>
           <button type="button" className="primary" onClick={() => props.onDraw(area)}>

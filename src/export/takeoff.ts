@@ -7,7 +7,7 @@ import { clusterMembers } from '../diagram/layout';
 import { homeLink } from '../model/actions';
 import { inlineFemales, isRun } from '../model/graph';
 import type { Display, DisplayNode } from '../model/types';
-import { PALETTES, areaSizeFt, areaStyle, bulbColors, bulbCount, drawnAsLights, paletteOf, runLengthFt, runStyle, spacingInOf } from '../photo/geometry';
+import { PALETTES, areaSizeFt, areaStyle, bulbColors, bulbCount, drawnAsLights, paletteOf, runLengthFt, runStyle, spacingInOf, wiringLines } from '../photo/geometry';
 
 export interface TakeoffLine {
   /** What to buy, e.g. "C9 bulbs · Warm white · 12″ apart". */
@@ -201,6 +201,25 @@ export function takeoff(display: Display, opts: TakeoffOptions = {}): TakeoffSec
   }
 
   const sections: TakeoffSection[] = [];
+  // Cords that no longer reach (something was moved after they were sized): fix these first.
+  const short = new Map<string, TakeoffLine & { need: number }>();
+  for (const v of views) {
+    for (const l of wiringLines(display, v)) {
+      if (!l.short || (only && !only.has(l.childId))) continue;
+      const key = l.via.join('+');
+      if ((short.get(key)?.need ?? 0) >= l.short.need) continue;
+      const cords = l.via.map((id) => display.nodes[id]);
+      const item = cords.length === 1 ? `${cords[0].id} ${cords[0].label} (${l.short.have} ft)` : `${l.via.join(' + ')} (${l.short.have} ft together)`;
+      short.set(key, {
+        item,
+        qty: `needs ~${l.short.need} ft`,
+        detail: `to reach ${l.childId} on “${v.name}”${l.short.fix ? ` · use a ${l.short.fix} ft cord` : ''}`,
+        ids: [...l.via, l.childId],
+        need: l.short.need,
+      });
+    }
+  }
+  if (short.size) sections.push({ title: 'Check these cords', lines: [...short.values()].map(({ need: _n, ...line }) => line) });
   if (runs.size)
     sections.push({
       title: 'Lights along the house',

@@ -353,7 +353,7 @@ export const CORD_SIZES_FT = [3, 6, 9, 15, 25, 40, 50, 75, 100];
 
 /** The shortest common cord that spans a gap, with some slack for going around things. */
 export function cordFor(gap: number): number {
-  const need = gap * 1.15 + 1;
+  const need = cordNeed(gap);
   return CORD_SIZES_FT.find((s) => s >= need) ?? Math.ceil(need / 50) * 50;
 }
 
@@ -453,7 +453,16 @@ export interface WiringLine {
   via: string[];
   /** Straight-line length in feet, once the photo has a scale. */
   lengthFt?: number;
+  /**
+   * The cords in between are too short for this gap (after something was moved): their total
+   * length, what the gap needs (with the same slack used to size cords), and, for a single
+   * cord, the common length that would reach.
+   */
+  short?: { have: number; need: number; fix?: number };
 }
+
+/** Feet a cord needs to span a gap: 15% slack for going around things, plus a foot. */
+export const cordNeed = (gap: number) => gap * 1.15 + 1;
 
 /**
  * A cable from each placed item to the nearest placed item upstream of it. On a light run it
@@ -482,7 +491,15 @@ export function wiringLines(display: Display, view: PhotoView): WiringLine[] {
         }
         const cord = via.length ? display.nodes[via[0]] : undefined; // the cord this item plugs into
         const color = cableColor(cord?.color) ?? (n.kind === 'load' ? wireColorOf(n) : cableColor(n.color)) ?? CABLE.green;
-        out.push({ childId: n.id, parentId: parent.id, from, to, color, via: [...via].reverse(), lengthFt: view.feetPerPx ? gapFt(from, to, view) : undefined });
+        const lengthFt = view.feetPerPx ? gapFt(from, to, view) : undefined;
+        let short: WiringLine['short'];
+        const lens = via.map((id) => display.nodes[id]?.lengthFt);
+        if (lengthFt !== undefined && via.length && lens.every((x) => x !== undefined)) {
+          const have = lens.reduce<number>((a, b) => a + (b ?? 0), 0);
+          const need = cordNeed(lengthFt);
+          if (need > have + 0.01) short = { have, need: Math.ceil(need), fix: via.length === 1 ? cordFor(lengthFt) : undefined };
+        }
+        out.push({ childId: n.id, parentId: parent.id, from, to, color, via: [...via].reverse(), lengthFt, short });
         break;
       }
       if (parent?.kind === 'cord') via.push(parent.id);

@@ -564,3 +564,5 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 .notice button { min-height: 38px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .notice { background: #422006; color: #fef3c7; } }
 :root[data-theme="dark"] .notice { background: #422006; color: #fef3c7; }
+.cable-tag { cursor: pointer; }
+.short-note { color: var(--err, #b91c1c); font-size: 0.85rem; align-self: center; }

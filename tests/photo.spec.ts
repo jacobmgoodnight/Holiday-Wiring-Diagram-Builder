@@ -392,3 +392,38 @@ test('follow edges traces the roof line; photos can be renamed and each has its 
   await list.getByLabel('Which photo').selectOption({ label: 'Everything in the plan' });
   await expect(list.getByRole('region', { name: 'Lights along the house' })).toBeVisible();
 });
+
+test('desktop: a cord that no longer reaches is flagged, and one tap makes it long enough', async ({ page, isMobile }) => {
+  test.skip(!!isMobile, 'mouse drag');
+  await sampleHouse(page);
+  await page.getByRole('button', { name: /Measure/ }).click();
+  await tap(page, 1040, 760);
+  await tap(page, 1340, 760);
+  await page.getByRole('button', { name: 'Double garage door 16 ft' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: /Place from plan/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /O01/ }).click();
+  await tap(page, 580, 700);
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add C9 roofline run', exact: true }).first().click();
+  for (const [x, y] of [[260, 430], [650, 190]] as const) await tap(page, x, y);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.toast')).toContainText('Added C01, a 40 ft extension cord');
+
+  // Drag the roofline run up and to the left: the 40 ft cord no longer reaches.
+  await settled(page);
+  const [sx, sy] = await at(page, 455, 310);
+  const [tx, ty] = await at(page, 205, 160);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await page.mouse.move(tx, ty, { steps: 10 });
+  await page.mouse.up();
+  const tag = page.getByRole('button', { name: /^C01 is too short: 40 ft, needs about \d+ ft$/ });
+  await expect(tag).toBeVisible();
+
+  // Tap the red tag to select the cord, then let it pick a length that reaches.
+  await tag.click();
+  await page.getByRole('region', { name: 'Selected C01' }).getByRole('button', { name: /Needs ~\d+ ft: use a 50 ft cord/ }).click();
+  await expect(tag).toHaveCount(0);
+  await expectText(page, { contains: 'C01 Green extension cord 50ft' });
+});
