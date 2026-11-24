@@ -10,7 +10,7 @@ install and tear it down from a checklist.
 
 **Status: all phases complete except Phase 3 (load checks), deferred.** Build a plan by
 typing or tapping, see it on a photo of your house with glowing lights, install and tear it
-down from a checklist, copy it for next year, print cord labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
+down from the Install tab, copy it for next year, print labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
 data model, phases and the decisions that need your review.
 
 ## Using it
@@ -103,6 +103,16 @@ data model, phases and the decisions that need your review.
   with numbered items, the steps (put up or take down) with boxes to tick, what to buy, and
   the plan diagram. Leave out what you do not need (no shopping list when you already have
   everything); the choices are remembered.
+* **Labels and zip ties** (⋯ menu): small labels with the ID big and one useful line: a
+  cord's length on both ends (`C02 · 25 ft`), where lights and props go (`L02 · Garage peak`),
+  or the gear's name. Optionally where it plugs in and the storage spot. Formats: a flag
+  that folds around a cord (reads from both sides), small or large paper labels, or one line
+  each for a label maker (copy, or CSV for P-touch / Dymo). **Zip ties, both optional:** a
+  colour for each outlet (everything it powers gets that colour; pick black, white or green
+  to blend in), and one tie per story (1 = first floor, 2 = second story). The sheet counts
+  the labels and ties to get ready, and lets you set where things go, cord lengths, stories
+  and outlet colours in one list. The Install tab and install sheet show the same dots, and
+  steps say "(2nd story)". IDs are never reused, so a printed label stays right.
 * **Print the plan diagram** (⋯ menu or the Install tab): one outlet per page, wide or tall,
   sideways or upright.
 * **Cords that no longer reach**: once a photo is measured, an extension cord too short for
@@ -114,7 +124,7 @@ data model, phases and the decisions that need your review.
   or from the measured photo (~). "Only items marked New this year" lists what to buy.
   Copy as text or download a CSV; tap an ID to jump to that item.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
-  Cord and plug labels, Shopping list, Install sheet, Print the plan diagram, Download items
+  Labels and zip ties, Shopping list, Install sheet, Print the plan diagram, Download items
   as CSV, Sync with other
   devices, Back up all displays (JSON), Import a backup, Delete.
 * **My presets**: "Save as preset" on any item; it then shows in the picker.
@@ -206,7 +216,7 @@ src/model/season.ts                   copy for next year, compare, restore-point
 src/ui/InstallTab.tsx, Dialogs.tsx    install/take-down steps, restore/copy/changes dialogs
 src/export/installSteps.ts            plug-in order and take-down order in words
 src/ui/PlanDiagrams.tsx               printing the plan diagram
-src/export/labels.ts, LabelSheet.tsx  cord and plug labels (paper and label maker)
+src/export/labels.ts, LabelSheet.tsx  labels and zip-tie marks (paper, flags, label maker)
 src/export/csv.ts, backup.ts          CSV export, JSON backup and safe import
 src/presets/custom.ts                 save as preset, outline autocomplete
 src/photo/                            photo overlay: geometry, actions, editor, pane

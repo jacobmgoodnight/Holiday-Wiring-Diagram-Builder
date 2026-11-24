@@ -42,11 +42,31 @@ export interface NewItem {
 
 const clone = (d: Display): Display => structuredClone(d);
 
+/** Highest ID number per prefix: the IDs in the plan and the ones used before (idHigh). */
+export function idHighs(display: Display): Record<string, number> {
+  const out: Record<string, number> = { ...(display.idHigh ?? {}) };
+  for (const id of Object.keys(display.nodes)) out[id[0]] = Math.max(out[id[0]] ?? 0, Number(id.slice(1)) || 0);
+  return out;
+}
+
+/**
+ * What `after` must remember of the IDs `before` used (after deleting items, or an item
+ * changing kind): the numbers above anything still in the plan. Undefined when nothing is.
+ */
+export function idHighAfter(before: Display, after: Pick<Display, 'nodes' | 'idHigh'>): Record<string, number> | undefined {
+  const high = idHighs(before);
+  for (const [p, n] of Object.entries(after.idHigh ?? {})) high[p] = Math.max(high[p] ?? 0, n);
+  const present: Record<string, number> = {};
+  for (const id of Object.keys(after.nodes)) present[id[0]] = Math.max(present[id[0]] ?? 0, Number(id.slice(1)) || 0);
+  const out: Record<string, number> = {};
+  for (const [p, n] of Object.entries(high)) if (n > (present[p] ?? 0)) out[p] = n;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** The next ID for a kind: never one used before in this plan, so labels stay right. */
 export function nextNodeId(display: Display, kind: NodeKind): string {
   const prefix = ID_PREFIX[kind];
-  let max = 0;
-  for (const id of Object.keys(display.nodes)) if (id[0] === prefix) max = Math.max(max, Number(id.slice(1)) || 0);
-  return prefix + String(max + 1).padStart(2, '0');
+  return prefix + String((idHighs(display)[prefix] ?? 0) + 1).padStart(2, '0');
 }
 
 function nextLinkId(display: Display): string {
@@ -242,6 +262,8 @@ export function deleteNode(display: Display, id: string, withChildren: boolean):
     }
   }
   for (const o of orphans) if (d.nodes[o]) makeRoot(d, d.nodes[o]);
+  d.idHigh = idHighAfter(display, d);
+  if (!d.idHigh) delete d.idHigh;
   return { display: d };
 }
 

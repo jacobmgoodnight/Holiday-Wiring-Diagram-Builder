@@ -59,6 +59,7 @@ import { type InstallDirection, InstallTab } from './ui/InstallTab';
 import { DiagramPrint } from './ui/PlanDiagrams';
 import { ChangesDialog, CopyDialog, RestoreDialog } from './ui/Dialogs';
 import { LabelSheet } from './ui/LabelSheet';
+import { assignTieColors } from './export/labels';
 import { FindBox } from './ui/FindBox';
 import { HelpSheet } from './ui/HelpSheet';
 import { NodePanel } from './ui/NodePanel';
@@ -1343,7 +1344,7 @@ export function App() {
                 </button>
               )}
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabelsOpen(true); }}>
-                Cord and plug labels…
+                Labels and zip ties…
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
                 Shopping list…
@@ -1750,6 +1751,15 @@ export function App() {
       {labelsOpen && (
         <LabelSheet
           display={display}
+          onPatch={(id, patch) => act((d) => updateNode(d, id, patch))}
+          onMarks={(m) =>
+            act((d) => {
+              // Turning colours on hands each outlet without one a different colour.
+              let out: Display = { ...d, marks: m };
+              if (m.colors) for (const [id, c] of Object.entries(assignTieColors(out))) out = updateNode(out, id, { tieColor: c }).display;
+              return { display: out };
+            })
+          }
           onDownloadCsv={(csv) => downloadText(csv, `${fileSlug(title)}-labels.csv`, 'text/csv')}
           onClose={() => setLabelsOpen(false)}
         />

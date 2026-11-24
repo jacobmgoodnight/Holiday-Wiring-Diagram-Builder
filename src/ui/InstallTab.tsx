@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { type InstallStep, installSteps, takedownSteps } from '../export/installSteps';
 import type { Display } from '../model/types';
 import { useWakeLock } from './useWakeLock';
+import { tiesFor } from '../export/labels';
+import { TieDots } from './TieDots';
 
 export type InstallDirection = 'up' | 'down';
 
@@ -75,7 +77,7 @@ export function InstallTab(p: Props) {
         <section className="it-next" aria-label="Next step">
           <span className="it-next-label">Next</span>
           <p>
-            <b>{next.n}.</b> {next.text}
+            <b>{next.n}.</b> <TieDots ties={tiesFor(p.display, next.id)} trailing />{next.text}
           </p>
           <div className="it-next-actions">
             <button type="button" className="primary big" onClick={() => p.onToggle(next)}>
@@ -122,7 +124,7 @@ export function InstallTab(p: Props) {
               <label className="it-step">
                 <input type="checkbox" checked={s.done} onChange={() => p.onToggle(s)} />
                 <span>
-                  <b className="it-n">{s.n}.</b> {s.text}
+                  <b className="it-n">{s.n}.</b> <TieDots ties={tiesFor(p.display, s.id)} trailing />{s.text}
                 </span>
               </label>
               <button type="button" className="it-show" onClick={() => p.onShow(s.id)} aria-label={`Show ${s.id}`}>

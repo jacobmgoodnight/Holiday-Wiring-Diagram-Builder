@@ -556,3 +556,27 @@ Decisions:
   outlet-by-outlet list and its separate "Verified" button are gone ([verified] in the
   outline still counts as up).
 * **D49. Tall on phones, wide on computers**, each switchable and remembered per device.
+
+## Labels round
+
+* **Labels** (`src/export/labels.ts`): the ID, then one line you need in your hand: a cord's
+  length (both ends get the same label, so the two ends pair up), where lights and props go
+  (the item's Location), or the gear's name. Route and storage are optional extras. Formats:
+  flag (two faces with a wrap strip; the far face upside down so it reads from the other
+  side), small, large, label maker (text or CSV).
+* **Zip-tie marks** (`display.marks`, model-only): `colors` gives each outlet a tie colour
+  (`tieColor`, handed out distinct when turned on, editable), and everything powered from it
+  gets that colour; `stories` gives one tie per story (`story` on items: 1 = ground or first
+  floor). Both off by default. The label sheet counts labels and ties by colour; the Install
+  tab and install sheet show the dots; steps say "(2nd story)".
+* **IDs are never reused** (`display.idHigh`): deleting the highest-numbered item, or an item
+  changing kind, remembers its number so the next new item gets a higher one. Stored only
+  while it is above every ID still in the plan.
+
+Decisions:
+
+* **D50. Physical marks are optional and discreet.** Coloured tape was too visible; zip ties
+  in a colour per outlet and a count per story say "which circuit" and "which ladder" without
+  reading anything.
+* **D51. Labels say what you need in your hand**, not the route: the route changes when you
+  re-plan, the cord's length and where the lights go do not.

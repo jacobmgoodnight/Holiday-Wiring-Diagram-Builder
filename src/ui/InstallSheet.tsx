@@ -4,6 +4,8 @@ import { takeoff } from '../export/takeoff';
 import type { Display, PhotoView } from '../model/types';
 import { renderPicture } from '../photo/Picture';
 import { PlanDiagrams } from './PlanDiagrams';
+import { tiesFor } from '../export/labels';
+import { TieDots } from './TieDots';
 
 interface Props {
   display: Display;
@@ -140,7 +142,7 @@ export function InstallSheet({ display, photoUrls, initialViewId, onClose }: Pro
                   <span className="box" aria-hidden="true">
                     {s.done ? '☑' : '☐'}
                   </span>
-                  <b className="num">{s.n}.</b> {s.text}
+                  <b className="num">{s.n}.</b> <TieDots ties={tiesFor(display, s.id)} trailing />{s.text}
                   {s.done && <span className="sr-only"> (done)</span>}
                 </li>
               ))}

@@ -8,6 +8,7 @@ import { homeLink } from '../model/actions';
 import { isRun, socketLabels } from '../model/graph';
 import type { Display, DisplayNode } from '../model/types';
 import { photoItems } from './takeoff';
+import { storyName } from './labels';
 
 export interface InstallStep {
   /** 1, 2, 3… in order. */
@@ -41,6 +42,11 @@ function intoText(display: Display, id: string): string | undefined {
   return `${home.from} ${port}`;
 }
 
+/** "… into C01 (2nd story)." for things that go up high. */
+function withStory(text: string, n: DisplayNode): string {
+  return n.story && n.story >= 2 ? text.replace(/\.$/, ` (${storyName(n.story)} story).`) : text;
+}
+
 export function installSteps(display: Display, opts: { viewId?: string } = {}): InstallStep[] {
   const only = opts.viewId ? photoItems(display, opts.viewId) : undefined;
   const steps: InstallStep[] = [];
@@ -61,13 +67,13 @@ export function installSteps(display: Display, opts: { viewId?: string } = {}): 
         loose.push(id);
         continue;
       }
-      steps.push({ n: 0, id, text, onPhoto: !!(opts.viewId && n.placements?.[opts.viewId]), done: n.status !== 'planned' });
+      steps.push({ n: 0, id, text: withStory(text, n), onPhoto: !!(opts.viewId && n.placements?.[opts.viewId]), done: n.status !== 'planned' });
     }
   }
   // Not plugged in yet: listed last so nothing is forgotten.
   for (const id of loose) {
     const n = display.nodes[id];
-    steps.push({ n: 0, id, text: `Put up ${itemName(n)} (not plugged in yet in the plan).`, onPhoto: !!(opts.viewId && n.placements?.[opts.viewId]), done: n.status !== 'planned' });
+    steps.push({ n: 0, id, text: withStory(`Put up ${itemName(n)} (not plugged in yet in the plan).`, n), onPhoto: !!(opts.viewId && n.placements?.[opts.viewId]), done: n.status !== 'planned' });
   }
   return steps.map((s, i) => ({ ...s, n: i + 1 }));
 }
@@ -85,7 +91,7 @@ export function takedownSteps(display: Display, opts: { viewId?: string } = {}):
     const into = intoText(display, s.id);
     const home = homeLink(display, s.id);
     const what = into ? (home?.kind === 'signal' ? `Disconnect ${itemName(n)} from ${into}` : `Unplug ${itemName(n)} from ${into}`) : `Take down ${itemName(n)}`;
-    out.push({ ...s, text: `${what}.${n.storage ? ` Store in ${n.storage}.` : ''}`, done: !!n.packed });
+    out.push({ ...s, text: `${withStory(`${what}.`, n)}${n.storage ? ` Store in ${n.storage}.` : ''}`, done: !!n.packed });
   }
   return out.map((s, i) => ({ ...s, n: i + 1 }));
 }
