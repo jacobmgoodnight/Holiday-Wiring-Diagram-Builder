@@ -580,3 +580,34 @@ Decisions:
   reading anything.
 * **D51. Labels say what you need in your hand**, not the route: the route changes when you
   re-plan, the cord's length and where the lights go do not.
+
+## Replacing Holiday Display Blueprint
+
+This app is now the one planner; Holiday Display Blueprint is retired (no data migrated: it
+held only test entries). From the Blueprint we took only what was worth it:
+
+* **Excel export and import** (`src/export/workbook.ts`): an Items sheet plus a Display sheet.
+  Import builds the model from the rows and writes the outline with `syncFromModel`, the same
+  path as diagram edits, so IDs and model-only fields (location, circuit, storage, notes)
+  survive. Tested as a round trip on both fixtures: export → import → outline → export gives
+  the same sheet.
+* **Device list for other tools** (`src/export/devices.ts`, `holiday-devices` v1), so the
+  show-control dashboard reads this app's items instead of keeping a third inventory.
+* **One-tap Back up** in the top bar (the existing JSON backup).
+
+Not taken (already here, or not wanted): the property layout and zone-map editor, photo
+galleries, multi-page navigation, the Blueprint's cloud sync (this app has its own, D42–D45),
+the separate lighting stock catalog, Field Mode (the Install tab does that job), the iOS
+companion plans. Load totals, quick-edit
+and season duplicate were offered and declined for now.
+
+Decisions:
+
+* **D52. Our own .xlsx code instead of SheetJS.** The npm build of SheetJS (0.18.5) has
+  unfixed security advisories and newer builds are not on npm. A ~200-line reader/writer on
+  `fflate` (8 KB, the one new dependency) covers text and number cells, shared strings and
+  inline strings, and is loaded only when you use Excel.
+* **D53. Excel import never merges.** It always creates a new display, like a backup import of
+  a display that already exists; merging rows into a live plan could silently rewire it.
+* **D54. The device file is export-only and versioned.** Readers should check `format` and
+  `version`; watts and amps are as entered, never estimated.

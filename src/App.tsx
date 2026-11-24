@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Diagram } from './diagram/Diagram';
-import { downloadPng, downloadSvg, downloadText, fileSlug } from './diagram/exportImage';
+import { downloadBlob, downloadPng, downloadSvg, downloadText, fileSlug } from './diagram/exportImage';
 import { BackupError, makeBackup, parseBackup, planImport } from './export/backup';
 import { displayToCsv } from './export/csv';
 import { type LayoutDirection, clusterList, clusterOf, layoutDisplay } from './diagram/layout';
@@ -337,6 +337,7 @@ export function App() {
   /** Photos arrived by sync: look for missing ones again. */
   const [photoNonce, setPhotoNonce] = useState(0);
   const importInput = useRef<HTMLInputElement>(null);
+  const excelInput = useRef<HTMLInputElement>(null);
   const refreshCustom = useCallback(async () => {
     if (persist.current) setCustom(await listCustomPresets());
   }, []);
@@ -873,6 +874,54 @@ export function App() {
     showToast(`Backup of ${backup.displays.length} display${backup.displays.length === 1 ? '' : 's'} downloaded. Keep it somewhere safe.`);
   };
 
+  /** Excel: the current display's items and wiring as an .xlsx workbook. */
+  const exportExcel = async () => {
+    if (!display) return;
+    try {
+      const { displayToWorkbook } = await import('./export/workbook');
+      const bytes = displayToWorkbook(display);
+      downloadBlob(new Blob([bytes as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${fileSlug(display.title)}.xlsx`);
+    } catch {
+      showToast('Could not make the Excel file.');
+    }
+  };
+
+  /** Excel import always makes a new display; nothing already here is changed. */
+  const importExcel = (file: File) =>
+    whileBusy(async () => {
+      try {
+        const { workbookToDisplay } = await import('./export/workbook');
+        const name = file.name.replace(/\.xlsx$/i, '').replace(/[-_]+/g, ' ').trim();
+        const { display: imported, warnings } = workbookToDisplay(new Uint8Array(await file.arrayBuffer()), newId(), name);
+        await flush();
+        const existingTitles = new Set((await listDisplays()).map((d) => d.title));
+        if (existingTitles.has(imported.title)) {
+          imported.title = `${imported.title} (imported)`;
+          imported.comments = imported.comments.map((c) => (c.id === 'c-title' ? { ...c, text: `# ${imported.title}` } : c));
+        }
+        const synced = syncFromModel(imported);
+        const d = { id: imported.id, text: synced.text, result: synced.result };
+        if (persist.current) await saveDisplay(toStored(d.text, d.result.display, d.result.lineNodeIds));
+        open(d);
+        await refreshList();
+        const n = Object.keys(d.result.display.nodes).length;
+        showToast(
+          `Imported "${imported.title}" with ${n} item${n === 1 ? '' : 's'} as a new display.` +
+            (warnings.length ? ` ${warnings.length} row${warnings.length === 1 ? '' : 's'} needed a fix: ${warnings.slice(0, 2).join(' ')}${warnings.length > 2 ? ' …' : ''}` : ''),
+        );
+      } catch (e) {
+        showToast(e instanceof Error && e.message ? e.message : 'Could not read that file.');
+      }
+    });
+
+  /** A plain device list for other tools (the show-control dashboard) to read. */
+  const exportDevices = async () => {
+    if (!display) return;
+    const { devicesFile } = await import('./export/devices');
+    downloadText(JSON.stringify(devicesFile(display), null, 2), `${fileSlug(display.title)}-devices.json`, 'application/json');
+    showToast('Device list downloaded. Your dashboard can read this file.');
+  };
+
   const importBackup = async (file: File) => {
     try {
       const backup = parseBackup(await file.text());
@@ -1326,6 +1375,10 @@ export function App() {
           <button type="button" onClick={() => void newDisplay()} disabled={!persist.current}>
             New
           </button>
+          <button type="button" onClick={() => void exportBackup()} disabled={!persist.current} aria-label="Back up" title="Download a JSON backup of every display (restore it from ⋯ → Import a backup)">
+            <span className="wide-only">Back up</span>
+            <span className="narrow-only" aria-hidden="true">💾</span>
+          </button>
           <details className="menu">
             <summary aria-label="More display actions">⋯</summary>
             <div className="menu-list" role="menu">
@@ -1349,6 +1402,12 @@ export function App() {
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
                 Shopping list…
               </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); void exportExcel(); }}>
+                Download as Excel (.xlsx)
+              </button>
+              <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); excelInput.current?.click(); }}>
+                Import from Excel…
+              </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setInstallSheet({}); }}>
                 Install sheet (print or PDF)…
               </button>
@@ -1357,6 +1416,9 @@ export function App() {
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
                 Download items as CSV
+              </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); void exportDevices(); }}>
+                Device list for dashboard (JSON)
               </button>
               {(server || sync.state) && (
                 <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); setSyncOpen({}); }}>
@@ -1384,6 +1446,18 @@ export function App() {
               const f = e.target.files?.[0];
               e.target.value = '';
               if (f) void importBackup(f);
+            }}
+          />
+          <input
+            ref={excelInput}
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            hidden
+            aria-label="Excel file"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) void importExcel(f);
             }}
           />
           <ThemeButton />

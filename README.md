@@ -124,11 +124,12 @@ data model, phases and the decisions that need your review.
   or from the measured photo (~). "Only items marked New this year" lists what to buy.
   Copy as text or download a CSV; tap an ID to jump to that item.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
-  Labels and zip ties, Shopping list, Install sheet, Print the plan diagram, Download items
-  as CSV, Sync with other
+  Labels and zip ties, Shopping list, Install sheet, Print the plan diagram, Download as Excel,
+  Import from Excel, Download items as CSV, Device list for dashboard (JSON), Sync with other
   devices, Back up all displays (JSON), Import a backup, Delete.
 * **My presets**: "Save as preset" on any item; it then shows in the picker.
-* **Back up regularly** (⋯ → Back up all displays). Everything lives in this browser, and
+* **Back up regularly**: one tap on **Back up** (💾 on a phone) in the top bar downloads every
+  display as one JSON file; ⋯ → **Import a backup** restores it. Everything lives in this browser, and
   clearing site data deletes it; after a fair amount of work the app reminds you to back up.
   On iPhone, add it to the Home Screen so Safari keeps your plans (the app shows a one-time
   tip). When a new version is published, a note offers to reload.
@@ -143,6 +144,46 @@ data model, phases and the decisions that need your review.
   the diagram's ⋯ menu (remembered on this device). Phones open one outlet at a time; tap
   **Overall** for everything. **Fit** never shrinks text below readable size; pan instead.
 * After the first visit it works offline, and can be added to the iPhone home screen.
+
+## Excel
+
+* **Download as Excel (.xlsx)**: an *Items* sheet with one row per item (id, kind, type, name,
+  plugs_into, socket, watts, amps, length, sockets, location, circuit, storage, tags, notes…)
+  in diagram order, and a *Display* sheet with the title, season and year. Text never turns
+  into a formula.
+* **Import from Excel…** always makes a **new display**; nothing already here changes. Edit
+  the downloaded sheet and import it, or type your own: only a `name` column is required.
+  Missing IDs and kinds are filled in as if you had typed the line; an unknown `plugs_into`
+  or a loop leaves that item not plugged in and the message says which row.
+* Excel holds items and wiring only. Photos, drawn runs and light looks are in the JSON backup,
+  which stays the complete copy.
+
+## Device file for other tools
+
+**Device list for dashboard (JSON)** downloads `<display>-devices.json`, a flat list your
+show-control dashboard (or anything else) can read, so devices are entered only here. It is
+an export only; edit devices in this app.
+
+```jsonc
+{
+  "format": "holiday-devices", "version": 1, "exportedAt": "2026-11-24T…Z",
+  "display": { "id": "…", "title": "Christmas 2026", "season": "christmas", "year": 2026 },
+  "devices": [
+    { "id": "C02", "name": "black cord", "kind": "cord", "type": null,
+      "outlet": "O01",          // wall outlet at the top of its power chain (null if unplugged)
+      "plugsInto": "K01", "socket": "left", "link": "power",
+      "zone": "Front porch",    // its Location, else the nearest one above it
+      "location": null, "circuit": "Garage 15A", "watts": null, "amps": null, "qty": 1,
+      "status": "planned", "retired": false, "storage": "Tote 3", "tags": [], "notes": null }
+  ],
+  "signals": [ { "from": "K03", "to": "L40", "type": "hdmi" } ]
+}
+```
+
+`kind` is one of outlet, smartplug, cord, splitter, controller, enclosure, load; `type` is the
+load category (c9, projector, inflatable…) or power subtype (spt, timer…). Watts and amps are
+as entered (the total for that line). New fields may be added in version 1; anything that
+changes meaning gets a new version number.
 
 ## Edit as text (⋯ menu)
 
@@ -218,6 +259,8 @@ src/export/installSteps.ts            plug-in order and take-down order in words
 src/ui/PlanDiagrams.tsx               printing the plan diagram
 src/export/labels.ts, LabelSheet.tsx  labels and zip-tie marks (paper, flags, label maker)
 src/export/csv.ts, backup.ts          CSV export, JSON backup and safe import
+src/export/xlsx.ts, workbook.ts       Excel: small .xlsx reader/writer, items sheet export/import
+src/export/devices.ts                 device list JSON for other tools (dashboard)
 src/presets/custom.ts                 save as preset, outline autocomplete
 src/photo/                            photo overlay: geometry, actions, editor, pane
 src/store/db.ts                       IndexedDB (Dexie), serialized writes
