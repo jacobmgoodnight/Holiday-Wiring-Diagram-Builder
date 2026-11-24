@@ -463,7 +463,7 @@ test('install mode ticks items on the photo; the install sheet lists the plug-in
   await expect(sheet.locator('.install-figure img')).toBeVisible();
   await sheet.getByRole('button', { name: 'Close install sheet' }).click();
 
-  // Same ticks as the Checklist (and the outline).
+  // Same ticks as the Install tab (and the outline).
   await expectText(page, { contains: 'Inflatable [installed]' });
 });
 

@@ -1,6 +1,6 @@
 /** Standalone, print-friendly SVG of a layout (always light colours). Pure; no DOM needed. */
 import type { Layout, LayoutEdge, LayoutNode, Tone } from './layout';
-import { LINE_H } from './layout';
+import { INDENT, LINE_H, TRUNK } from './layout';
 
 export const TONE_COLORS: Record<Tone, { fill: string; stroke: string; text: string }> = {
   power: { fill: '#dbeafe', stroke: '#2563eb', text: '#1e3a8a' },
@@ -13,8 +13,17 @@ export const TONE_COLORS: Record<Tone, { fill: string; stroke: string; text: str
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** Orthogonal connector: right side of source to left side of target, bend near the target. */
-export function edgePath(s: LayoutNode, t: LayoutNode): { d: string; labelX: number; labelY: number } {
+/**
+ * Orthogonal connector. Wide: right side of source to left side of target, bend near the
+ * target. Tall: down from the source's trunk, then across to the target, with the socket
+ * label on the trunk beside the target.
+ */
+export function edgePath(s: LayoutNode, t: LayoutNode, tall = false): { d: string; labelX: number; labelY: number } {
+  if (tall && t.x >= s.x + INDENT - 1 && t.y > s.y) {
+    const x = s.x + TRUNK;
+    const y2 = t.y + t.h / 2;
+    return { d: `M${x},${s.y + s.h} V${y2} H${t.x}`, labelX: x, labelY: y2 };
+  }
   const x1 = s.x + s.w;
   const y1 = s.y + s.h / 2;
   const x2 = t.x;
@@ -51,11 +60,11 @@ function nodeSvg(n: LayoutNode): string {
   return parts.join('');
 }
 
-function edgeSvg(e: LayoutEdge, byId: Map<string, LayoutNode>): string {
+function edgeSvg(e: LayoutEdge, byId: Map<string, LayoutNode>, tall: boolean): string {
   const s = byId.get(e.source);
   const t = byId.get(e.target);
   if (!s || !t) return '';
-  const { d, labelX, labelY } = edgePath(s, t);
+  const { d, labelX, labelY } = edgePath(s, t, tall);
   const signal = e.kind === 'signal';
   const color = signal ? '#7c3aed' : '#475569';
   const parts = [`<path d="${d}" fill="none" stroke="${color}" stroke-width="1.6"${signal ? ' stroke-dasharray="6 4"' : ''}/>`];
@@ -83,7 +92,7 @@ export function layoutToSvg(layout: Layout, title: string, note = 'Planning aid 
       `<text x="${c.x + 8}" y="${c.y + 20}" font-size="14" font-weight="700" fill="#0f172a">${esc(c.title)}</text>`,
     );
   }
-  for (const e of layout.edges) body.push(edgeSvg(e, byId));
+  for (const e of layout.edges) body.push(edgeSvg(e, byId, layout.direction === 'tall'));
   for (const n of layout.nodes) body.push(nodeSvg(n));
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="system-ui, -apple-system, Segoe UI, sans-serif">`,

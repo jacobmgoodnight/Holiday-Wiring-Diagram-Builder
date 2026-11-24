@@ -17,37 +17,45 @@ const menu = async (page: Page, item: string) => {
   await page.getByRole('menuitem', { name: item }).click();
 };
 
-test('install checklist ticks write status into the same plan', async ({ page }) => {
+test('install tab: tick steps in plug-in order; ticks write status into the same plan', async ({ page }) => {
   await load(page, halloween);
-  await page.getByRole('button', { name: 'Checklist', exact: true }).click();
-  await expect(page.locator('.cl-total')).toHaveText('1 of 55 installed'); // S08 is [installed] in the fixture
-  const o1 = page.getByRole('region', { name: 'O01 Front porch outlet' });
-  await expect(o1.locator('.cl-row').first()).toContainText('O01');
-  await o1.getByRole('checkbox', { name: 'C02 black cord: installed' }).check();
-  await expect(page.locator('.cl-total')).toHaveText('2 of 55 installed');
-  await o1.getByRole('button', { name: 'Verified: C02' }).click();
+  await page.getByRole('button', { name: 'Install', exact: true }).click();
+  const total = page.locator('.it-total');
+  await expect(total).toHaveText('1 of 55 up'); // S08 is [installed] in the fixture
+  const steps = page.getByRole('list', { name: 'Steps to put it up' });
+  await expect(steps.locator('li').first()).toContainText('1. Start at O01');
+  // The next step is up top, with a big button to tick it.
+  const next = page.getByRole('region', { name: 'Next step' });
+  await expect(next).toContainText('1. Start at O01');
+  await next.getByRole('button', { name: '✓ O01 is up' }).click();
+  await expect(total).toHaveText('2 of 55 up');
+  await expect(next).toContainText('2. Plug K01');
+  await steps.getByRole('checkbox', { name: /Plug C02 black cord/ }).check();
+  await expect(total).toHaveText('3 of 55 up');
   await page.getByRole('checkbox', { name: 'Hide done' }).check();
-  await expect(o1.getByRole('checkbox', { name: 'C02 black cord: installed' })).toHaveCount(0);
-  // Back on the plan: the outline line carries the status, and the item is selected.
-  await o1.locator('.cl-row', { hasText: 'K01' }).getByRole('button', { name: 'Show K01 on the diagram' }).click();
-  await expectText(page, { contains: '    left: C02 black cord 10ft [verified]\n' });
+  await expect(steps.getByRole('checkbox', { name: /Plug C02 black cord/ })).toHaveCount(0);
+  // Back on the plan (K01 is not on a photo): the outline line carries the status, and the item is selected.
+  await steps.locator('li', { hasText: 'Plug K01' }).getByRole('button', { name: 'Show K01' }).click();
+  await expectText(page, { contains: '    left: C02 black cord 10ft [installed]\n' });
   await expect(page.getByRole('region', { name: 'Selected K01' })).toBeVisible();
 });
 
-test('teardown runs back to the wall and remembers what is packed', async ({ page }) => {
+test('take down runs back to the wall and remembers what is packed; the tab is remembered', async ({ page }) => {
   await load(page, halloween);
-  await page.getByRole('button', { name: 'Checklist', exact: true }).click();
-  await page.getByRole('button', { name: 'Teardown', exact: true }).click();
-  const o3 = page.getByRole('region', { name: 'O03 Back porch outlet (temporary fog branch)' });
-  await expect(o3.locator('.cl-row').last()).toContainText('O03');
-  await o3.getByRole('checkbox', { name: /^S07 .*: packed$/ }).check();
-  await expect(page.locator('.cl-total')).toHaveText('1 of 55 packed');
-  await expect(page.locator('.react-flow')).toHaveCount(0); // field mode shows the checklist only
+  await page.getByRole('button', { name: 'Install', exact: true }).click();
+  await page.getByRole('button', { name: 'Take down', exact: true }).click();
+  const steps = page.getByRole('list', { name: 'Steps to take it down' });
+  await expect(steps.locator('li').first()).toContainText(/^1\. (Unplug|Take down|Disconnect) /);
+  await expect(steps).not.toContainText('Start at'); // outlets stay
+  await steps.getByRole('checkbox', { name: /Unplug S07 / }).check();
+  await expect(page.locator('.it-total')).toHaveText(/^1 of \d+ packed$/);
+  await expect(page.locator('.react-flow')).toHaveCount(0); // the install tab shows the steps only
   await page.waitForTimeout(600);
   await page.reload();
-  await page.getByRole('button', { name: 'Checklist', exact: true }).click();
-  await page.getByRole('button', { name: 'Teardown', exact: true }).click();
-  await expect(page.locator('.cl-total')).toHaveText('1 of 55 packed');
+  // Opens on the Install tab again.
+  await expect(page.getByRole('button', { name: 'Install', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Take down', exact: true }).click();
+  await expect(page.locator('.it-total')).toHaveText(/^1 of \d+ packed$/);
 });
 
 test('copy for next year: fresh statuses, new items flagged, changes listed', async ({ page }) => {
@@ -62,9 +70,9 @@ test('copy for next year: fresh statuses, new items flagged, changes listed', as
   // The original is untouched.
   await expect(page.getByRole('combobox', { name: 'Display' }).locator('option', { hasText: 'Halloween 2026' })).toHaveCount(1);
 
-  // Find S03 from the checklist, then plug something into it from its panel.
-  await page.getByRole('button', { name: 'Checklist', exact: true }).click();
-  await page.getByRole('button', { name: 'Show S03 on the diagram' }).click();
+  // Find S03 from the install steps, then plug something into it from its panel.
+  await page.getByRole('button', { name: 'Install', exact: true }).click();
+  await page.getByRole('button', { name: 'Show S03' }).click();
   await page.getByRole('region', { name: 'Selected S03' }).getByRole('button', { name: '+ Plug in' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Add Inflatable', exact: true }).first().click();
   await expectText(page, { contains: '      3: Inflatable [new]\n' });

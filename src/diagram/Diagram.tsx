@@ -18,12 +18,12 @@ import {
 import '@xyflow/react/dist/style.css';
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Target } from '../model/actions';
-import { type Cluster, type Layout, type LayoutNode, prettyPort } from './layout';
+import { type Cluster, type Layout, type LayoutNode, TRUNK, prettyPort } from './layout';
 import { TONE_COLORS } from './svg';
 
-type ItemNode = Node<{ ln: LayoutNode; selected: boolean }, 'item'>;
+type ItemNode = Node<{ ln: LayoutNode; selected: boolean; tall: boolean }, 'item'>;
 type ClusterNode = Node<{ cluster: Cluster }, 'cluster'>;
-type WireEdge = Edge<{ label?: string; signal: boolean; reference: boolean }, 'wire'>;
+type WireEdge = Edge<{ label?: string; signal: boolean; reference: boolean; tall: boolean }, 'wire'>;
 
 const hidden = { opacity: 0, width: 1, height: 1, minWidth: 0, minHeight: 0, border: 0 };
 
@@ -147,7 +147,11 @@ const ItemView = memo(function ItemView({ data }: NodeProps<ItemNode>) {
           +
         </button>
       )}
-      <Handle type="source" position={Position.Right} style={hidden} isConnectable={false} />
+      {data.tall ? (
+        <Handle type="source" position={Position.Bottom} style={{ ...hidden, left: TRUNK }} isConnectable={false} />
+      ) : (
+        <Handle type="source" position={Position.Right} style={hidden} isConnectable={false} />
+      )}
     </div>
   );
 });
@@ -165,7 +169,12 @@ function WireView({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps<Wi
   let path: string;
   let lx: number;
   let ly: number;
-  if (data?.reference || targetX <= sourceX + 8) {
+  if (data?.tall && !data.reference && targetY > sourceY && targetX > sourceX) {
+    // Tall layout: down the trunk, then across to the item; the socket label sits on the trunk.
+    path = `M${sourceX},${sourceY} V${targetY} H${targetX}`;
+    lx = sourceX;
+    ly = targetY;
+  } else if (data?.reference || targetX <= sourceX + 8) {
     [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition: Position.Right, targetPosition: Position.Left });
   } else {
     // Orthogonal wire that bends near the child, so socket labels sit next to each child.
@@ -217,6 +226,8 @@ export interface DiagramProps {
   undo: { can: boolean; run: () => void };
   redo: { can: boolean; run: () => void };
   onExportSvg: () => void;
+  /** Switch between the wide and the tall layout. */
+  onDirection?: (d: 'wide' | 'tall') => void;
   onExportPng: () => void;
   /** Item being renamed on the canvas, and what to do when renaming ends (null = cancelled). */
   renamingId?: string;
@@ -283,7 +294,7 @@ function DiagramInner(props: DiagramProps) {
         id: ln.id,
         type: 'item',
         position: drag?.id === ln.id ? { x: drag.x, y: drag.y } : { x: ln.x, y: ln.y },
-        data: { ln, selected: !!ln.nodeId && ln.nodeId === selectedId },
+        data: { ln, selected: !!ln.nodeId && ln.nodeId === selectedId, tall: layout.direction === 'tall' },
         draggable: canDrag && ln.type === 'item',
         width: ln.w,
         height: ln.h,
@@ -303,7 +314,7 @@ function DiagramInner(props: DiagramProps) {
         target: e.target,
         selectable: false,
         focusable: false,
-        data: { label: e.label, signal: e.kind === 'signal', reference: !!e.reference },
+        data: { label: e.label, signal: e.kind === 'signal', reference: !!e.reference, tall: layout.direction === 'tall' },
       })),
     [layout],
   );
@@ -326,7 +337,8 @@ function DiagramInner(props: DiagramProps) {
       const minX = Math.min(...inFirst.map((m) => m.x));
       const root = inFirst.find((n) => n.x === minX);
       const anchor = root ? root.y + root.h / 2 : 0;
-      y = Math.min(pad, ch / 2 - anchor * zoom);
+      // Below the toolbar at the top (it covers about the first 56 px).
+      y = Math.min(Math.max(pad, 60), ch / 2 - anchor * zoom);
       y = Math.max(y, ch - pad - h * zoom);
     }
     rf.setViewport({ x, y, zoom }, { duration: 0 });
@@ -350,7 +362,7 @@ function DiagramInner(props: DiagramProps) {
       // the next tap is usually already on screen. A plain selection only needs the item itself
       // (moving the canvas under the pointer would break a double-click). Instant, so a quick
       // next tap never hits a moving target.
-      const span = centerRequest.next ? ln.w + NEXT_COLUMN : ln.w;
+      const span = centerRequest.next && layout.direction !== 'tall' ? ln.w + NEXT_COLUMN : ln.w;
       const left = ln.x * zoom + x;
       const top = ln.y * zoom + y;
       const inView = left >= 0 && top >= 40 && left + span * zoom <= el.clientWidth && top + ln.h * zoom <= el.clientHeight;
@@ -500,6 +512,9 @@ function DiagramInner(props: DiagramProps) {
               <summary aria-label="More diagram actions">⋯</summary>
               <div className="export-menu" role="menu">
                 {[
+                  ...(props.onDirection
+                    ? [[layout.direction === 'tall' ? 'Wide layout (left to right)' : 'Tall layout (top to bottom)', () => props.onDirection!(layout.direction === 'tall' ? 'wide' : 'tall')]]
+                    : []),
                   ['Fold all branches', props.onFoldAll],
                   ['Unfold all', props.onUnfoldAll],
                   ...(props.showMinimap && tooBig ? [[mapHidden ? 'Show overview map' : 'Hide overview map', () => setMapHidden((h) => !h)]] : []),
