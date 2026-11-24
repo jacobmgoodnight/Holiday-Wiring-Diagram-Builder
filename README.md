@@ -1,6 +1,6 @@
-# Wiring Sketchpad
+# Plug & Glow
 
-*Repository: Holiday Wiring Diagram Builder.* **[Open the app](https://jacobmgoodnight.github.io/Holiday-Wiring-Diagram-Builder/)**
+*Plan the lights. Plan the power.* (Formerly Wiring Sketchpad; repository: Holiday Wiring Diagram Builder.) **[Open the app](https://jacobmgoodnight.github.io/Holiday-Wiring-Diagram-Builder/)**
 
 Fast, local-first planner for holiday display power wiring (Christmas and Halloween): tap
 to build what plugs into what, see it as a clean diagram and on a photo of your house, then
