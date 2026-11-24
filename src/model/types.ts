@@ -120,6 +120,12 @@ export interface DisplayNode {
   tieColor?: string;
   /** Which story it goes on (1 = ground or first floor, 2 = second story…): zip ties to put on it. */
   story?: number;
+  /** Your own second line for its label (instead of the length, place or name). */
+  labelText?: string;
+  /** Leave it out of the labels. */
+  labelSkip?: boolean;
+  /** Its label has been printed ("Not printed yet" leaves it out). */
+  labelPrinted?: boolean;
   scheduleGroup?: string;
   /** Teardown: packed away this season (model-only). */
   packed?: boolean;

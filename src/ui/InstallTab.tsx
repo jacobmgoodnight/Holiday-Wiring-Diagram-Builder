@@ -22,6 +22,8 @@ interface Props {
   onPhotoMode: (viewId?: string) => void;
   onInstallSheet: (viewId?: string) => void;
   onPrintDiagram: () => void;
+  /** Labels (and zip ties) for everything or this photo. */
+  onLabels: (viewId?: string) => void;
 }
 
 /**
@@ -103,6 +105,9 @@ export function InstallTab(p: Props) {
         </button>
         <button type="button" onClick={p.onPrintDiagram}>
           🖨 Plan diagram
+        </button>
+        <button type="button" onClick={() => p.onLabels(scope || undefined)}>
+          🏷 Labels
         </button>
         {!up && done > 0 && (
           <button type="button" onClick={p.onClearPacked}>

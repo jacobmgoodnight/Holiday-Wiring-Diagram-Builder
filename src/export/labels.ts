@@ -21,6 +21,14 @@ export interface LabelOptions {
   route?: boolean;
   /** Add the storage spot when one is set. */
   storage?: boolean;
+  /** Cords: the length (default) or the name on the second line. */
+  cordLine?: 'length' | 'name';
+  /** Lights and props: where they go (default) or the name on the second line. */
+  lightLine?: 'where' | 'name';
+  /** Only items new this year, or only ones whose label has not been printed. */
+  only?: 'all' | 'new' | 'unprinted';
+  /** Only these items (one outlet, one photo, one item). */
+  ids?: ReadonlySet<string>;
 }
 
 export interface Ties {
@@ -128,33 +136,48 @@ function feeds(display: Display, id: string): string | undefined {
   return kids.length <= 3 ? kids.join(', ') : `${kids.slice(0, 3).join(', ')} +${kids.length - 3}`;
 }
 
-/** The second line: a cord's length, where lights or a prop go, or the gear's name. */
-export function labelSub(n: DisplayNode): string {
+/**
+ * The second line: your own label text, else a cord's length, where lights or a prop go,
+ * or the gear's name (each can be switched to the name).
+ */
+export function labelSub(n: DisplayNode, opts: Pick<LabelOptions, 'cordLine' | 'lightLine'> = {}): string {
+  if (n.labelText) return n.labelText;
   const len = n.lengthFt !== undefined ? `${n.lengthApprox ? '~' : ''}${Math.round(n.lengthFt)} ft` : '';
-  if (n.kind === 'cord') return len || n.label;
-  if (n.kind === 'load') return n.location || n.label;
+  if (n.kind === 'cord') return opts.cordLine === 'name' ? n.label : len || n.label;
+  if (n.kind === 'load') return opts.lightLine === 'name' ? n.label : n.location || n.label;
   return n.location ? `${n.label} · ${n.location}` : n.label;
 }
 
-/** Items that get a label (outlets never do), in outline order, outlet by outlet. */
-export function labelledIds(display: Display, opts: Pick<LabelOptions, 'includeLoads'> = {}): string[] {
+/**
+ * Items that can get a label (outlets never do), in outline order, outlet by outlet: the
+ * candidates for the list you tick, before "leave it out" (labelSkip) is applied.
+ */
+export function labelCandidates(display: Display, opts: Pick<LabelOptions, 'includeLoads' | 'only' | 'ids'> = {}): string[] {
   const out: string[] = [];
   for (const g of clusterMembers(display)) {
     for (const id of g.members) {
       const n = display.nodes[id];
       if (!n || n.kind === 'outlet' || n.retired) continue;
       if (n.kind === 'load' && opts.includeLoads === false) continue;
+      if (opts.ids && !opts.ids.has(id)) continue;
+      if (opts.only === 'new' && !n.isNew) continue;
+      if (opts.only === 'unprinted' && n.labelPrinted) continue;
       out.push(id);
     }
   }
   return out;
 }
 
+/** Items that get a label: the candidates you have not left out. */
+export function labelledIds(display: Display, opts: Pick<LabelOptions, 'includeLoads' | 'only' | 'ids'> = {}): string[] {
+  return labelCandidates(display, opts).filter((id) => !display.nodes[id].labelSkip);
+}
+
 export function labelsFor(display: Display, opts: LabelOptions = {}): Label[] {
   const out: Label[] = [];
   for (const id of labelledIds(display, opts)) {
     const n = display.nodes[id];
-    const sub = labelSub(n);
+    const sub = labelSub(n, opts);
     const storage = opts.storage && n.storage ? n.storage : undefined;
     const ties = tiesFor(display, id);
     const from = where(display, id);

@@ -58,6 +58,8 @@ interface Props {
   onRenameView: (name: string) => void;
   /** Open the printable install sheet for this photo. */
   onInstallSheet: (viewId: string) => void;
+  /** Labels for what is on this photo. */
+  onLabels: (viewId: string) => void;
   blocked?: Set<string>;
   fitKey: string;
   /** Phone: the selection bar replaces the photo actions while something is selected. */
@@ -190,6 +192,16 @@ export function PhotoPane(props: Props) {
               }}
             >
               🖨 Install sheet…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                closeMenu(e);
+                props.onLabels(view.id);
+              }}
+            >
+              🏷 Labels…
             </button>
             <label className="menu-check" role="menuitemcheckbox" aria-checked={props.autoCords}>
               <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />

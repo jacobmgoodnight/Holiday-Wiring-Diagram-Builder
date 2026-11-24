@@ -103,16 +103,22 @@ data model, phases and the decisions that need your review.
   with numbered items, the steps (put up or take down) with boxes to tick, what to buy, and
   the plan diagram. Leave out what you do not need (no shopping list when you already have
   everything); the choices are remembered.
-* **Labels and zip ties** (⋯ menu): small labels with the ID big and one useful line: a
-  cord's length on both ends (`C02 · 25 ft`), where lights and props go (`L02 · Garage peak`),
-  or the gear's name. Optionally where it plugs in and the storage spot. Formats: a flag
-  that folds around a cord (reads from both sides), small or large paper labels, or one line
-  each for a label maker (copy, or CSV for P-touch / Dymo). **Zip ties, both optional:** a
-  colour for each outlet (everything it powers gets that colour; pick black, white or green
-  to blend in), and one tie per story (1 = first floor, 2 = second story). The sheet counts
-  the labels and ties to get ready, and lets you set where things go, cord lengths, stories
-  and outlet colours in one list. The Install tab and install sheet show the same dots, and
-  steps say "(2nd story)". IDs are never reused, so a printed label stays right.
+* **Labels and zip ties**: from the Install tab (🏷 Labels), the ⋯ menu, a photo's ⋯ (that
+  photo's items) or an item's details (🏷 Print a label for C05). Small labels with the ID
+  big and one useful line: a cord's length on both ends (`C02 · 25 ft`), where lights and
+  props go (`L02 · Garage peak`), or the gear's name; switch either to the name, or give any
+  item its own label text. Optionally where it plugs in and the storage spot.
+  * **Which:** everything, one outlet or one photo; all, new this year, or not printed yet
+    (**✓ Mark these as printed** after printing); untick any item to leave it out.
+  * **Paper:** plain paper (a flag that folds around a cord, small, large), **Avery 5160/8160**
+    (30 per sheet) or **5167/8167** (80 small labels) with **Start at label #** for a partly
+    used sheet, any custom size, or a label maker (copy, or CSV for P-touch / Dymo). Wide
+    labels can be flags too. Bigger text if you like. Print sheets at 100% (actual size).
+  * **Zip ties, both optional:** a colour for each outlet (everything it powers gets that
+    colour; pick black, white or green to blend in), and one tie per story (1 = first floor,
+    2 = second story). The sheet counts the labels and ties to get ready. The Install tab
+    and install sheet show the same dots, and steps say "(2nd story)".
+  * IDs are never reused, so a printed label stays right.
 * **Print the plan diagram** (⋯ menu or the Install tab): one outlet per page, wide or tall,
   sideways or upright.
 * **Cords that no longer reach**: once a photo is measured, an extension cord too short for

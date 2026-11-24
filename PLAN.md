@@ -572,6 +572,12 @@ Decisions:
 * **IDs are never reused** (`display.idHigh`): deleting the highest-numbered item, or an item
   changing kind, remembers its number so the next new item gets a higher one. Stored only
   while it is above every ID still in the plan.
+* **Labels you can tune** (labels round, part 2): which (scope, new, not printed yet with
+  `labelPrinted`, per-item `labelSkip`), what they say (cord length or name, place or name,
+  per-item `labelText`), and the stock: Avery 5160 (3 × 10, 2⅝ × 1 in, top 0.5 in, left
+  0.1875 in, gap 0.125 in) and 5167 (4 × 20, 1¾ × ½ in, top 0.5 in, left 0.28125 in, gap
+  0.3125 in) laid out one sheet per page with `@page { margin: 0 }`, a start position, any
+  custom size, flags on anything wider than 2.2 in. Text scales with the label height.
 
 Decisions:
 
