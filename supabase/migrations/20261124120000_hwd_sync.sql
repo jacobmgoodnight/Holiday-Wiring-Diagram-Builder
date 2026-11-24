@@ -8,11 +8,15 @@
 -- for anon/authenticated, so the Data API cannot read or list them. The only way in is the
 -- functions below, which need the lookup id. Prefix hwd_ keeps this apart from the other
 -- apps in the project (gw_, hdb_, hpp_); nothing else is touched.
+--
+-- Limits: the public key can call these functions, so hard caps keep anyone from filling the
+-- shared database: at most 100 sync codes, 2 MB of plans and 100 photos per code, and 200 MB of photos in all
+-- (400 MB at the very most). Raise them here if the project has room.
 
 create table if not exists public.hwd_vaults (
   lookup text primary key check (lookup ~ '^[0-9a-f]{64}$'),
   rev bigint not null default 1,
-  doc text not null check (length(doc) <= 8000000),
+  doc text not null check (length(doc) <= 2000000),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -58,6 +62,9 @@ begin
     raise exception 'bad request';
   end if;
   if p_base_rev = 0 then
+    if (select count(*) from public.hwd_vaults) >= 100 then
+      raise exception 'sync is full';
+    end if;
     insert into public.hwd_vaults (lookup, doc) values (p_lookup, p_doc)
     on conflict (lookup) do nothing
     returning rev into new_rev;
@@ -82,7 +89,7 @@ as $$
   select p.photo_id from public.hwd_photos p where p.lookup = p_lookup;
 $$;
 
--- Store a photo (once; photos never change). At most 300 per lookup id.
+-- Store a photo (once; photos never change). At most 100 per lookup id, 200 MB in all.
 create or replace function public.hwd_photo_put(p_lookup text, p_photo_id text, p_data text)
 returns void
 language plpgsql
@@ -93,8 +100,11 @@ begin
   if not exists (select 1 from public.hwd_vaults v where v.lookup = p_lookup) then
     raise exception 'no such vault';
   end if;
-  if (select count(*) from public.hwd_photos p where p.lookup = p_lookup) >= 300 then
+  if (select count(*) from public.hwd_photos p where p.lookup = p_lookup) >= 100 then
     raise exception 'too many photos';
+  end if;
+  if (select coalesce(sum(length(p.data)), 0) from public.hwd_photos p) + length(p_data) > 200000000 then
+    raise exception 'sync is full';
   end if;
   insert into public.hwd_photos (lookup, photo_id, data) values (p_lookup, p_photo_id, p_data)
   on conflict (lookup, photo_id) do nothing;

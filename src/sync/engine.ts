@@ -15,6 +15,8 @@ export interface SyncState {
 }
 
 const META = 'sync';
+/** The server keeps at most this much for the plans (supabase/migrations/*_hwd_sync.sql). */
+const MAX_DOC = 2_000_000;
 export const readSyncState = () => getMeta<SyncState | null>(META).then((s) => s ?? undefined);
 export const writeSyncState = (s: SyncState | undefined) => setMeta(META, s ?? null);
 
@@ -59,7 +61,9 @@ export async function runSync(state: SyncState, api: SyncApi = syncApi(), now = 
     const remote = row ? await openJson<SyncDoc>(keys, row.doc, 'doc') : undefined;
     const m = mergeSync(await allDisplays(), remote, state.base, now);
     if (m.changedCloud) {
-      const rev = await api.push(keys.lookup, row?.rev ?? 0, await sealJson(keys, m.doc, 'doc'));
+      const sealed = await sealJson(keys, m.doc, 'doc');
+      if (sealed.length > MAX_DOC) throw new Error('Your plans are too big to sync (over 2 MB, photos aside). Delete old displays you no longer need and try again.');
+      const rev = await api.push(keys.lookup, row?.rev ?? 0, sealed);
       if (!rev) continue; // another device synced in between: merge again
     }
     // The cloud has the merged copy: now bring the other device's changes here.
