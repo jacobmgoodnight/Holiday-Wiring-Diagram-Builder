@@ -1,8 +1,8 @@
 /** Photo view actions (pure). Placing items never changes their wiring. */
 import { type ActionResult, ActionError, type NewItem, type Target, addNode, replug, subtreeIds } from '../model/actions';
-import { inlineFemales, isRun, powerChildren, socketLabels } from '../model/graph';
+import { inlineFemales, isRun, powerChildren, powerParent, socketLabels, spliceable } from '../model/graph';
 import type { Display, Measure, Placement, PhotoView } from '../model/types';
-import { type Pt, cordFor, drawnAsRun, feetPerPxFrom, gapFt, plugPoint, runSocketSpots, tapPositions } from './geometry';
+import { type Pt, cordFor, drawnAsRun, feetPerPxFrom, gapFt, nearestOnPolyline, plugPoint, runSocketSpots, shapePx, tapPositions } from './geometry';
 
 const clone = (d: Display): Display => structuredClone(d);
 
@@ -162,7 +162,7 @@ export function plugOnPhoto(
   view: PhotoView,
   childId: string,
   target: Target,
-  opts: { autoCord?: boolean; isNew?: boolean } = {},
+  opts: { autoCord?: boolean; isNew?: boolean; reachFt?: number } = {},
 ): ActionResult & { cordId?: string; cordFt?: number } {
   const child = display.nodes[childId];
   if (!child) throw new ActionError(`No item ${childId}`);
@@ -173,7 +173,7 @@ export function plugOnPhoto(
   const mine = child.placements?.[view.id];
   if (opts.autoCord !== false && from && mine && (from.onRun || drawnAsRun(child))) {
     const gap = gapFt(from.at, plugPoint(mine, view), view);
-    if (gap > 1.5) {
+    if (gap > (opts.reachFt ?? 1.5)) {
       const cordFt = view.feetPerPx ? cordFor(gap) : undefined;
       const cord: NewItem = { kind: 'cord', label: 'Green extension cord', color: 'green', outputs: 1, lengthFt: cordFt, isNew: opts.isNew };
       const added = addNode(display, cord, target);
@@ -182,6 +182,77 @@ export function plugOnPhoto(
     }
   }
   return replug(display, childId, target);
+}
+
+/** How far an item's own lead reaches to a female on a zip cord, before it needs an extension cord. */
+export const CORD_REACH_FT = 4;
+/** An open female this close to the best spot is used instead of splicing another. */
+const REUSE_FT = 2;
+
+/**
+ * Plug an item into a zip cord (or C9 stringer) on the photo where it is nearest: an open
+ * female close to that spot is used, otherwise a vampire female is spliced in there. So
+ * females go where things plug in, and nothing needs placing beforehand. Falls back to a
+ * plain plug-in when either is not on this photo.
+ */
+export function plugIntoCord(
+  display: Display,
+  view: PhotoView,
+  childId: string,
+  runId: string,
+  opts: { autoCord?: boolean; isNew?: boolean } = {},
+): ActionResult & { cordId?: string; cordFt?: number; port?: string; spliced?: boolean } {
+  const run = display.nodes[runId];
+  const child = display.nodes[childId];
+  const runPl = run?.placements?.[view.id];
+  const mine = child?.placements?.[view.id];
+  if (!spliceable(run) || runPl?.kind !== 'path' || !mine || run.outputs === undefined) return plugOnPhoto(display, view, childId, { parent: runId }, opts);
+  if (subtreeIds(display, childId).has(runId)) {
+    throw new ActionError(`${runId} is plugged into ${childId}; that would make a loop`);
+  }
+  const near = nearestOnPolyline(shapePx(runPl, view, run.smooth)!, plugPoint(mine, view));
+  const open = (runSocketSpots(display, runId, view) ?? []).filter((s) => !s.childId || s.childId === childId);
+  const reuse = open
+    .map((s) => ({ s, d: gapFt(s.at, near.at, view) }))
+    .filter((x) => x.d <= REUSE_FT)
+    .sort((a, b) => a.d - b.d)[0]?.s;
+  let d = display;
+  let port = reuse?.port;
+  if (!port) {
+    const r = spliceFemale(display, runId, view.id, near.along);
+    d = r.display;
+    port = r.port;
+  }
+  const res = plugOnPhoto(d, view, childId, { parent: runId, port }, { ...opts, reachFt: CORD_REACH_FT });
+  return { ...res, port, spliced: !reuse };
+}
+
+/**
+ * Items on this photo that are not plugged in yet and sit within `maxFt` of a zip cord, in
+ * order along it (from the plug end): what "Plug in nearby" would plug in.
+ */
+export function nearbyUnplugged(display: Display, view: PhotoView, runId: string, maxFt = 6): string[] {
+  const run = display.nodes[runId];
+  const runPl = run?.placements?.[view.id];
+  if (!spliceable(run) || runPl?.kind !== 'path') return [];
+  const shape = shapePx(runPl, view, run.smooth)!;
+  const out: { id: string; along: number }[] = [];
+  for (const n of Object.values(display.nodes)) {
+    const pl = n.placements?.[view.id];
+    if (!pl || n.id === runId || n.kind === 'outlet' || powerParent(display, n.id)) continue;
+    if (subtreeIds(display, n.id).has(runId)) continue; // the cord is plugged into it
+    const near = nearestOnPolyline(shape, plugPoint(pl, view));
+    if (gapFt(near.at, plugPoint(pl, view), view) <= maxFt) out.push({ id: n.id, along: near.along });
+  }
+  return out.sort((a, b) => a.along - b.along).map((x) => x.id);
+}
+
+/** Plug every nearby unplugged item into the zip cord, each at its own spot. */
+export function plugNearbyIntoCord(display: Display, view: PhotoView, runId: string, opts: { autoCord?: boolean; isNew?: boolean } = {}): ActionResult & { plugged: string[] } {
+  const ids = nearbyUnplugged(display, view, runId);
+  let d = display;
+  for (const id of ids) d = plugIntoCord(d, view, id, runId, opts).display;
+  return { display: d, nodeId: runId, plugged: ids };
 }
 
 /**

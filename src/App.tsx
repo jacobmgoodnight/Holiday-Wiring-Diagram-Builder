@@ -21,7 +21,7 @@ import {
   updateNode,
 } from './model/actions';
 import { type ChecklistMode, type ChecklistRow, checklist } from './model/checklist';
-import { displayStats, isRun } from './model/graph';
+import { displayStats, isRun, spliceable } from './model/graph';
 import { type Direction, navigate, parentOf } from './model/navigate';
 import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
@@ -71,7 +71,11 @@ import {
   addMeasure,
   addPlacedNode,
   addView,
+  CORD_REACH_FT,
   moveFemale,
+  nearbyUnplugged,
+  plugIntoCord,
+  plugNearbyIntoCord,
   plugOnPhoto,
   removeFemale,
   removeMeasure,
@@ -882,15 +886,29 @@ export function App() {
   const remembered = (r: ActionResult, node: Pick<DisplayNode, 'kind' | 'label' | 'category'>, opts?: LightOpts): ActionResult =>
     opts && drawnAsLights(node) ? { ...r, display: rememberLook(r.display, node, opts) } : r;
 
-  /** Plug in on the photo (adding an extension cord when a strand does not reach). */
-  const plugHere = (d: Display, childId: string, target: Target) =>
-    photoView ? plugOnPhoto(d, photoView, childId, target, { autoCord: autoCords, isNew: isNewHere(d) }) : replug(d, childId, target);
+  /**
+   * Plug in on the photo (adding an extension cord when a strand does not reach). Into a zip
+   * cord with no female named, a female goes where the item is nearest.
+   */
+  const plugHere = (d: Display, childId: string, target: Target) => {
+    if (!photoView) return replug(d, childId, target);
+    const opts = { autoCord: autoCords, isNew: isNewHere(d) };
+    const into = target.parent ? d.nodes[target.parent] : undefined;
+    if (spliceable(into) && !target.port) return plugIntoCord(d, photoView, childId, target.parent!, opts);
+    return plugOnPhoto(d, photoView, childId, target, { ...opts, reachFt: spliceable(into) ? CORD_REACH_FT : undefined });
+  };
+  /** "Plugged L05 into C01 tap 3 (a new female)". */
+  const pluggedNote = (r: ActionResult, childId: string, parent: string, port?: string) => {
+    const x = r as ActionResult & { port?: string; spliced?: boolean };
+    const where = x.port ?? port;
+    return `Plugged ${childId} into ${parent}${where ? ` ${where.replace(/^tap/, 'tap ')}` : ''}${x.spliced ? ' (a new female there)' : ''}`;
+  };
   /** Says so when plugging in added an extension cord; true if it did. */
   const cordNote = (res: ActionResult, parent: string | null | undefined) => {
     const r = res as ActionResult & { cordId?: string; cordFt?: number };
     if (r.cordId)
       showToast(
-        `Added ${r.cordId}, a ${r.cordFt ? `${r.cordFt} ft ` : ''}extension cord, to reach ${parent}${r.cordFt ? '' : ' (measure the photo to size it)'}`,
+        `Added ${r.cordId}, ${r.cordFt ? `a ${r.cordFt} ft` : 'an'} extension cord, to reach ${parent}${r.cordFt ? '' : ' (measure the photo to size it)'}`,
         true,
       );
     return !!r.cordId;
@@ -956,16 +974,20 @@ export function App() {
       if (!p) return;
       noteUsed(p.id);
       const look = opts ? lightPatch(p, opts) : {};
+      // Zip cord drawn on the photo: just the end female; the others go where things plug in.
+      const females = spliceable(p) && p.kind === 'cord' ? { outputs: 1 } : {};
       // Starting on an open female wins over where "+ Plug in" was pressed.
       const target = snap ?? it.target;
       act(
         (d) => {
-          const r = remembered(addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement), p, opts);
+          const r = remembered(addPlacedNode(d, { ...p, ...look, ...females, isNew: isNewHere(d) }, photoView.id, placement), p, opts);
           return target?.parent ? plugHere(r.display, r.nodeId!, target) : r;
         },
         (r, next) => {
           afterPlaced(r, next);
-          cordNote(r, target?.parent);
+          if (cordNote(r, target?.parent)) return;
+          const near = spliceable(p) && r.nodeId ? nearbyUnplugged(next.result.display, photoView, r.nodeId).length : 0;
+          if (near) showToast(`${near} item${near === 1 ? '' : 's'} along ${r.nodeId} can plug into it: tap 🔌 Plug in nearby`);
         },
       );
     }
@@ -1159,6 +1181,16 @@ export function App() {
             drawn={drawnAsRun(selNode)}
             canBush={drawnAsLights(selNode)}
             canSplice={isRun(selNode) && selNode.placements?.[photoView.id]?.kind === 'path'}
+            nearby={nearbyUnplugged(display, photoView, selNode.id).length}
+            onPlugNearby={() =>
+              act(
+                (d) => plugNearbyIntoCord(d, photoView, selNode.id, { autoCord: autoCords, isNew: isNewHere(d) }),
+                (r) => {
+                  const n = (r as ActionResult & { plugged: string[] }).plugged;
+                  showToast(`Plugged ${n.join(', ')} into ${selNode.id}, each at its own female`, true);
+                },
+              )
+            }
             onSplice={() => setIntent({ type: 'splice', nodeId: selNode.id })}
             onSwapEnds={() => act((d) => swapEnds(d, selNode.id, photoView.id), () => showToast(`Swapped the plug and the end of ${selNode.id}`, true))}
             onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
@@ -1451,7 +1483,7 @@ export function App() {
                   (r) => {
                     setSelected(r.nodeId);
                     if (cordNote(r, parent)) return;
-                    if (!r.warning) showToast(`Plugged ${id} into ${parent}${port ? ` ${port.replace(/^tap/, 'tap ')}` : ''}`, true);
+                    if (!r.warning) showToast(pluggedNote(r, id, parent, port), true);
                   },
                 );
               }}
@@ -1462,7 +1494,7 @@ export function App() {
                   (r) => {
                     setSelected(childId);
                     if (cordNote(r, it.parentId)) return;
-                    if (!r.warning) showToast(`Plugged ${childId} into ${it.parentId} ${it.port.replace(/^tap/, 'tap ')}`, true);
+                    if (!r.warning) showToast(pluggedNote(r, childId, it.parentId, it.port), true);
                   },
                 );
               }}
@@ -1746,6 +1778,9 @@ function PhotoNodeActions(props: {
   canBush: boolean;
   /** A run drawn on this photo: inline females can be spliced in. */
   canSplice: boolean;
+  /** A zip cord: unplugged items close to it that "Plug in nearby" would plug in. */
+  nearby?: number;
+  onPlugNearby?: () => void;
   /** Lights that are outlined as a bush (net lights, wraps) rather than drawn as a run. */
   defaultArea: boolean;
   onPlace: () => void;
@@ -1778,6 +1813,11 @@ function PhotoNodeActions(props: {
           <button type="button" className="primary" onClick={() => props.onDraw(area)}>
             {area ? '🌳' : '✏️'} {placement && placement.kind !== 'point' ? 'Redraw on photo' : area ? 'Outline on photo' : 'Draw on photo'}
           </button>
+          {!!props.nearby && (
+            <button type="button" className="primary" onClick={props.onPlugNearby}>
+              🔌 Plug in {props.nearby} nearby
+            </button>
+          )}
           {props.canSplice && (
             <button type="button" onClick={props.onSplice}>
               ✂️ Add inline female

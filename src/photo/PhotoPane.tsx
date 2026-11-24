@@ -119,96 +119,98 @@ export function PhotoPane(props: Props) {
   }
 
   return (
-    <div className="photo-pane">
+    <div className={`photo-pane${props.selectedId ? ' has-selection' : ''}`}>
       {fileInput}
       <div className="photo-bar">
-        <div className="photo-tabs" role="tablist" aria-label="Photos">
-          {views.map((v) => (
-            <button key={v.id} type="button" role="tab" aria-selected={v.id === view.id} className={v.id === view.id ? 'chip on' : 'chip'} onClick={() => props.onPickView(v.id)}>
-              {v.name}
+        <div className="photo-scroll">
+          <div className="photo-tabs" role="tablist" aria-label="Photos">
+            {views.map((v) => (
+              <button key={v.id} type="button" role="tab" aria-selected={v.id === view.id} className={v.id === view.id ? 'chip on' : 'chip'} onClick={() => props.onPickView(v.id)}>
+                {v.name}
+              </button>
+            ))}
+            <button type="button" className="chip" disabled={props.busyPhoto} onClick={() => file.current?.click()} aria-label="Add another photo">
+              + Photo
             </button>
-          ))}
-          <button type="button" className="chip" disabled={props.busyPhoto} onClick={() => file.current?.click()} aria-label="Add another photo">
-            + Photo
-          </button>
+          </div>
+          <div className="photo-toggles">
+            <button type="button" aria-pressed={night} className={night ? 'on' : ''} onClick={() => setNight((n) => !n)} title="Night preview">
+              🌙 Night
+            </button>
+            <button type="button" aria-pressed={wiring} className={wiring ? 'on' : ''} onClick={() => setWiring((w) => !w)} title="Show what plugs into what">
+              🔌 Wiring
+            </button>
+            <button type="button" aria-pressed={props.intent?.type === 'scale'} className={view.feetPerPx ? 'on' : ''} onClick={() => props.setIntent({ type: 'scale' })} title="Measure: set the photo's scale">
+              📏 {view.feetPerPx ? 'Scale set' : 'Measure'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={props.intent?.type === 'install'}
+              className={props.intent?.type === 'install' ? 'on' : ''}
+              onClick={() => props.setIntent(props.intent?.type === 'install' ? undefined : { type: 'install' })}
+              title="Install mode: tap each item as you put it up"
+              aria-label="Install mode"
+            >
+              ✅
+            </button>
+            <button type="button" onClick={() => setSheet('picture')} title="Save the photo with its lights as a picture" aria-label="Save picture">
+              📸
+            </button>
+          </div>
         </div>
-        <div className="photo-toggles">
-          <button type="button" aria-pressed={night} className={night ? 'on' : ''} onClick={() => setNight((n) => !n)} title="Night preview">
-            🌙 Night
-          </button>
-          <button type="button" aria-pressed={wiring} className={wiring ? 'on' : ''} onClick={() => setWiring((w) => !w)} title="Show what plugs into what">
-            🔌 Wiring
-          </button>
-          <button type="button" aria-pressed={props.intent?.type === 'scale'} className={view.feetPerPx ? 'on' : ''} onClick={() => props.setIntent({ type: 'scale' })} title="Measure: set the photo's scale">
-            📏 {view.feetPerPx ? 'Scale set' : 'Measure'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={props.intent?.type === 'install'}
-            className={props.intent?.type === 'install' ? 'on' : ''}
-            onClick={() => props.setIntent(props.intent?.type === 'install' ? undefined : { type: 'install' })}
-            title="Install mode: tap each item as you put it up"
-            aria-label="Install mode"
-          >
-            ✅
-          </button>
-          <button type="button" onClick={() => setSheet('picture')} title="Save the photo with its lights as a picture" aria-label="Save picture">
-            📸
-          </button>
-          <details className="menu">
-            <summary aria-label="Photo options">⋯</summary>
-            <div className="menu-list" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  closeMenu(e);
-                  setSheet('picture');
-                }}
-              >
-                📸 Save picture…
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  closeMenu(e);
-                  props.onShoppingList(view.id);
-                }}
-              >
-                🧾 Shopping list…
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  closeMenu(e);
-                  props.onInstallSheet(view.id);
-                }}
-              >
-                🖨 Install sheet…
-              </button>
-              <label className="menu-check" role="menuitemcheckbox" aria-checked={props.autoCords}>
-                <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />
-                Add extension cords when a strand does not reach
-              </label>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  closeMenu(e);
-                  setPhotoName(view.name);
-                  setSheet('rename');
-                }}
-              >
-                Rename this photo…
-              </button>
-              <button type="button" role="menuitem" className="danger" onClick={() => props.onRemoveView(view)}>
-                Remove this photo
-              </button>
-            </div>
-          </details>
-        </div>
+        <details className="menu">
+          <summary aria-label="Photo options">⋯</summary>
+          <div className="menu-list" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                closeMenu(e);
+                setSheet('picture');
+              }}
+            >
+              📸 Save picture…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                closeMenu(e);
+                props.onShoppingList(view.id);
+              }}
+            >
+              🧾 Shopping list…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                closeMenu(e);
+                props.onInstallSheet(view.id);
+              }}
+            >
+              🖨 Install sheet…
+            </button>
+            <label className="menu-check" role="menuitemcheckbox" aria-checked={props.autoCords}>
+              <input type="checkbox" checked={props.autoCords} onChange={props.onToggleAutoCords} />
+              Add extension cords when a strand does not reach
+            </label>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                closeMenu(e);
+                setPhotoName(view.name);
+                setSheet('rename');
+              }}
+            >
+              Rename this photo…
+            </button>
+            <button type="button" role="menuitem" className="danger" onClick={() => props.onRemoveView(view)}>
+              Remove this photo
+            </button>
+          </div>
+        </details>
       </div>
 
       <PhotoEditor

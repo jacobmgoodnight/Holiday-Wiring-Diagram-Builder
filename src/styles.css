@@ -615,3 +615,22 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 .sync-actions, .sync-off { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .sync-off { margin-top: 16px; }
 .sync-error { color: var(--err); margin: 6px 0; }
+
+/* Install round: on phones the photo keeps its room */
+@media (max-width: 720px) {
+  .photo-bar { flex-wrap: nowrap; gap: 6px; }
+  .photo-tabs, .photo-toggles { flex: none; flex-wrap: nowrap; overflow: visible; }
+  .photo-tabs .chip, .photo-toggles > button { flex: none; }
+  /* With something selected, its actions matter more than the step guide. */
+  .photo-pane.has-selection .coach { display: none; }
+  .selbar-actions .short-note { flex: none; white-space: nowrap; }
+}
+.photo-scroll { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; justify-content: space-between; align-items: center; }
+@media (max-width: 720px) {
+  .photo-bar { overflow: visible; }
+  .photo-scroll { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .photo-scroll::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 720px) {
+  .photo-bar > .menu .menu-list { right: 0; }
+}

@@ -56,6 +56,8 @@ export function SelectionBar(p: Props) {
             + Into {p.parentId}
           </button>
         )}
+        {/* Actions for this view (on the photo: draw, females, plug in nearby) come next, in the same row. */}
+        {p.extra}
         <button type="button" onClick={p.onDuplicate} title="Another one of the same (Ctrl/⌘+D)">
           Duplicate
         </button>
@@ -74,7 +76,6 @@ export function SelectionBar(p: Props) {
           Delete
         </button>
       </div>
-      {p.extra && <div className="selbar-actions">{p.extra}</div>}
     </section>
   );
 }

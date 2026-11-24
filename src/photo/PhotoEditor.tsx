@@ -3,9 +3,11 @@ import { prettyPort, toneOf } from '../diagram/layout';
 import type { Target } from '../model/actions';
 import type { Display, DisplayNode, Measure, Placement, PhotoView } from '../model/types';
 import { measureSpread } from './actions';
+import { spliceable } from '../model/graph';
 import { iconFor } from '../presets/custom';
 import { TONE_COLORS } from '../diagram/svg';
 import {
+  drawnAsLights,
   type Pt,
   areaBulbs,
   areaSizeFt,
@@ -438,11 +440,16 @@ export function PhotoEditor(props: Props) {
     else if (!d.moved) {
       if (intent?.type === 'move') {
         if (d.id !== intent.nodeId && !props.blocked?.has(d.id)) {
-          // On a run, the nearest open female to where you tapped.
-          const at = toImage(e.clientX, e.clientY);
-          const open = (runSocketSpots(display, d.id, view) ?? []).filter((x) => !x.childId);
-          const near = open.sort((a, b) => Math.hypot(a.at[0] - at[0], a.at[1] - at[1]) - Math.hypot(b.at[0] - at[0], b.at[1] - at[1]))[0];
-          props.onPlugInto(intent.nodeId, d.id, near?.port);
+          if (spliceable(display.nodes[d.id])) {
+            // A zip cord: a female goes where the item is nearest (see plugIntoCord).
+            props.onPlugInto(intent.nodeId, d.id, undefined);
+          } else {
+            // On a run, the nearest open female to where you tapped.
+            const at = toImage(e.clientX, e.clientY);
+            const open = (runSocketSpots(display, d.id, view) ?? []).filter((x) => !x.childId);
+            const near = open.sort((a, b) => Math.hypot(a.at[0] - at[0], a.at[1] - at[1]) - Math.hypot(b.at[0] - at[0], b.at[1] - at[1]))[0];
+            props.onPlugInto(intent.nodeId, d.id, near?.port);
+          }
         }
       } else if (intent?.type === 'connect') {
         if (d.id !== intent.parentId) props.onConnect(intent, d.id);
@@ -868,7 +875,7 @@ export function PhotoEditor(props: Props) {
               >
                 🧲 Follow edges{follow && photoUrl && !edges ? ' (reading photo…)' : ''}
               </button>
-              {!drawing.area && (
+              {!drawing.area && (!draftBase || drawnAsLights(draftBase)) && (
                 <span className="seg shape-seg" role="group" aria-label="Shape">
                   {SHAPES.map(([k, name]) => (
                     <button
