@@ -33,6 +33,7 @@ import {
 import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
 import { lookFor } from './lightOpts';
 import { type EdgeMap, loadEdgeMap, snapPoint, traceEdge } from './edges';
+import { installSteps } from '../export/installSteps';
 
 const FOLLOW_KEY = 'wiring-sketchpad.followEdges';
 const readFollow = () => {
@@ -55,7 +56,9 @@ export type PhotoIntent =
   /** An open female was tapped: tap the strand or item that plugs into it. */
   | { type: 'connect'; parentId: string; port: string }
   /** Tap along a run to splice inline females into it. */
-  | { type: 'splice'; nodeId: string; added?: number };
+  | { type: 'splice'; nodeId: string; added?: number }
+  /** Install day: tap each item as you put it up (marks it installed, or back to planned). */
+  | { type: 'install' };
 
 /** Things of known size, for measuring the photo. */
 export const MEASURE_REFS: { name: string; ft: number; size: string }[] = [
@@ -103,6 +106,8 @@ interface Props {
   onSplice: (runId: string, along: number) => void;
   onMoveTap: (runId: string, index: number, along: number) => void;
   onRemoveFemale: (runId: string, index: number) => void;
+  /** Install mode: an item was tapped (installed ⇄ planned). */
+  onToggleInstalled: (id: string) => void;
   /** Items that cannot be plug targets for the moving item. */
   blocked?: Set<string>;
   night: boolean;
@@ -348,6 +353,8 @@ export function PhotoEditor(props: Props) {
         }
       } else if (intent?.type === 'connect') {
         if (d.id !== intent.parentId) props.onConnect(intent, d.id);
+      } else if (intent?.type === 'install') {
+        props.onToggleInstalled(d.id);
       } else if (intent?.type === 'draw' || intent?.type === 'scale' || intent?.type === 'place' || intent?.type === 'splice') {
         // Taps on top of markers still count as photo taps in these modes.
         tapAt(toImage(e.clientX, e.clientY));
@@ -432,6 +439,12 @@ export function PhotoEditor(props: Props) {
   const markerR = 17 * u;
   const drawPx = draft.map((p) => toPx(p, view));
   const movingId = intent?.type === 'move' ? intent.nodeId : undefined;
+  // Install mode: what is on this photo, in plug-in order, and the next one to put up.
+  const install = useMemo(() => {
+    if (intent?.type !== 'install') return undefined;
+    const steps = installSteps(display, { viewId: view.id }).filter((st) => st.onPhoto);
+    return { steps, done: steps.filter((st) => st.done).length, next: steps.find((st) => !st.done) };
+  }, [intent, display, view.id]);
   const plugTarget =
     (intent?.type === 'place' || intent?.type === 'draw') && intent.target
       ? intent.target.parent
@@ -439,7 +452,7 @@ export function PhotoEditor(props: Props) {
         ? intent.nodeId
         : intent?.type === 'connect'
           ? intent.parentId
-          : undefined;
+          : install?.next?.id;
 
   const scalePx = intent?.type === 'scale' && draft.length === 2 ? drawPx : null;
   const scaleFeet = Number(feet);
@@ -867,7 +880,34 @@ export function PhotoEditor(props: Props) {
               </button>
             </>
           )}
-          {!drawing && intent.type !== 'splice' && (
+          {install && (
+            <>
+              <span>
+                Install: tap each item as you put it up.{' '}
+                <b>
+                  {install.done} of {install.steps.length}
+                </b>{' '}
+                done on this photo.
+                {install.next ? (
+                  <>
+                    {' '}
+                    Next: <b>{install.next.n}.</b> {install.next.text}
+                  </>
+                ) : (
+                  ' All done. 🎉'
+                )}
+              </span>
+              {install.next && (
+                <button type="button" className="primary" onClick={() => props.onToggleInstalled(install.next!.id)}>
+                  ✓ {install.next.id} is up
+                </button>
+              )}
+              <button type="button" onClick={props.onCancelIntent}>
+                Done
+              </button>
+            </>
+          )}
+          {!drawing && intent.type !== 'splice' && intent.type !== 'install' && (
             <button type="button" onClick={props.onCancelIntent}>
               {intent.type === 'move' && intent.fresh ? 'Later' : 'Cancel'}
             </button>
@@ -952,6 +992,7 @@ export function Marker({ node, at, r, u, selected, target, dim, onDown, onMove, 
       <text y={r + 15.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill={c.text} fontFamily="ui-monospace, Menlo, monospace">
         {node.id}
       </text>
+      {node.status !== 'planned' && <DoneBadge at={[r * 0.8, -r * 0.8]} u={u} />}
     </g>
   );
 }
@@ -1139,6 +1180,7 @@ export function Lights(props: LightsProps) {
           <text y={1.5 * u} fontSize={12 * u} textAnchor="middle" fontWeight={700} fill="#0f172a" fontFamily="ui-monospace, Menlo, monospace">
             {label}
           </text>
+          {!draft && (node as DisplayNode).status !== undefined && (node as DisplayNode).status !== 'planned' && <DoneBadge at={[labelW / 2 + 2 * u, -3 * u]} u={u} />}
         </g>
       </g>
       {editable &&
@@ -1158,6 +1200,16 @@ export function Lights(props: LightsProps) {
             />
           );
         })}
+    </g>
+  );
+}
+
+/** Installed: a green tick. */
+function DoneBadge({ at, u }: { at: Pt; u: number }) {
+  return (
+    <g transform={`translate(${at[0]} ${at[1]})`} pointerEvents="none" role="img" aria-label="installed">
+      <circle r={8 * u} fill="#16a34a" stroke="#ffffff" strokeWidth={1.8 * u} />
+      <path d={`M${-3.6 * u},${0.2 * u} L${-1 * u},${2.8 * u} L${3.8 * u},${-2.6 * u}`} fill="none" stroke="#ffffff" strokeWidth={2 * u} strokeLinecap="round" strokeLinejoin="round" />
     </g>
   );
 }

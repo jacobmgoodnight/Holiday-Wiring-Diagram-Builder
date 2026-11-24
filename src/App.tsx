@@ -64,6 +64,7 @@ import { HelpSheet } from './ui/HelpSheet';
 import { NodePanel } from './ui/NodePanel';
 import { SelectionBar } from './ui/SelectionBar';
 import { ShoppingSheet } from './ui/ShoppingSheet';
+import { InstallSheet } from './ui/InstallSheet';
 import { TextSheet } from './ui/TextSheet';
 import { suggestionsFor } from './presets/suggest';
 import {
@@ -265,6 +266,8 @@ export function App() {
   const lastAuto = useRef(new Map<string, number>());
   const [custom, setCustom] = useState<Preset[]>([]);
   const [labelsOpen, setLabelsOpen] = useState(false);
+  /** The printable install sheet, for the whole plan or one photo. */
+  const [installSheet, setInstallSheet] = useState<{ viewId?: string } | null>(null);
   /** The shopping list, for the whole plan or one photo. */
   const [shopping, setShopping] = useState<{ viewId?: string } | null>(null);
   const shoppingOpen = !!shopping;
@@ -533,7 +536,7 @@ export function App() {
           doRedo();
         }
       }
-      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || (phone && detailsOpen));
+      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || installSheet || (phone && detailsOpen));
       if (e.key === 'Escape' && !picker && !photoPicker && !sheetOpen) {
         if (findOpen) setFindOpen(false);
         else if (intent) setIntent(undefined);
@@ -1148,6 +1151,9 @@ export function App() {
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
                 Shopping list…
               </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setInstallSheet({}); }}>
+                Install sheet (print or PDF)…
+              </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
                 Download items as CSV
               </button>
@@ -1348,8 +1354,10 @@ export function App() {
               onSplice={spliceAt}
               onMoveTap={slideFemale}
               onRemoveFemale={dropFemale}
+              onToggleInstalled={(id) => act((d) => updateNode(d, id, { status: d.nodes[id]?.status === 'planned' ? 'installed' : 'planned' }))}
               autoCords={autoCords}
               onShoppingList={(viewId) => setShopping({ viewId })}
+              onInstallSheet={(viewId) => setInstallSheet({ viewId })}
               onRenameView={(name) => photoView && act((d) => updateView(d, photoView.id, { name }))}
               onToggleAutoCords={() => {
                 const next = !autoCords;
@@ -1500,6 +1508,7 @@ export function App() {
           onClose={() => setShopping(null)}
         />
       )}
+      {installSheet && <InstallSheet display={display} photoUrls={photoUrls} initialViewId={installSheet.viewId} onClose={() => setInstallSheet(null)} />}
       {labelsOpen && (
         <LabelSheet
           display={display}

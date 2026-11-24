@@ -427,3 +427,40 @@ test('desktop: a cord that no longer reaches is flagged, and one tap makes it lo
   await expect(tag).toHaveCount(0);
   await expectText(page, { contains: 'C01 Green extension cord 50ft' });
 });
+
+test('install mode ticks items on the photo; the install sheet lists the plug-in order', async ({ page }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: /Place from plan/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /O01/ }).click();
+  await tap(page, 580, 700);
+  await page.getByRole('region', { name: 'Selected O01' }).getByRole('button', { name: '+ Plug in' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add Inflatable', exact: true }).first().click();
+  await tap(page, 880, 850);
+  await expect(page.getByRole('button', { name: 'L01 Inflatable on photo' })).toBeVisible();
+
+  // Install mode: the next step is pointed out; a tap on an item marks it up.
+  await page.getByRole('button', { name: 'Install mode' }).click();
+  const bar = page.locator('.photo-banner');
+  await expect(bar).toContainText('0 of 2 done on this photo');
+  await expect(bar).toContainText('Next: 1. Start at O01 Outlet.');
+  await bar.getByRole('button', { name: '✓ O01 is up' }).click();
+  await expect(bar).toContainText('1 of 2 done');
+  await page.getByRole('button', { name: 'L01 Inflatable on photo' }).click();
+  await expect(bar).toContainText('2 of 2 done on this photo. All done.');
+  await expect(page.getByRole('img', { name: 'installed' })).toHaveCount(2);
+  await bar.getByRole('button', { name: 'Done' }).click();
+
+  // The install sheet: numbered steps (installed ones ticked) and the numbered picture.
+  await page.getByLabel('Photo options').click();
+  await page.getByRole('menuitem', { name: '🖨 Install sheet…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Install sheet' });
+  const steps = sheet.getByRole('region', { name: 'Steps' });
+  await expect(steps).toContainText('1. Start at O01 Outlet.');
+  await expect(steps).toContainText('2. Plug L01 Inflatable into O01.');
+  await expect(steps.locator('li.done')).toHaveCount(2);
+  await expect(sheet.locator('.install-figure img')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Close install sheet' }).click();
+
+  // Same ticks as the Checklist (and the outline).
+  await expectText(page, { contains: 'Inflatable [installed]' });
+});

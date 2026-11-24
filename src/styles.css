@@ -361,7 +361,7 @@ button.danger { color: var(--err); }
 .photo-pane, .photo-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .photo-bar { flex: none; display: flex; flex-wrap: wrap; gap: 6px 10px; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .photo-tabs { display: flex; gap: 6px; overflow-x: auto; min-width: 0; }
-.photo-toggles { display: flex; gap: 6px; align-items: center; }
+.photo-toggles { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .photo-toggles > button { min-height: 36px; font-size: 0.85rem; padding: 0 10px; }
 .photo-toggles > button.on { background: var(--text); color: var(--panel); border-color: var(--text); }
 .photo { position: relative; flex: 1; min-height: 0; }
@@ -566,3 +566,27 @@ kbd { font: 600 0.8rem ui-monospace, Menlo, monospace; padding: 1px 6px; border:
 :root[data-theme="dark"] .notice { background: #422006; color: #fef3c7; }
 .cable-tag { cursor: pointer; }
 .short-note { color: var(--err, #b91c1c); font-size: 0.85rem; align-self: center; }
+
+/* Install sheet (prints like the labels page) */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.install-doc { max-width: 900px; margin: 0 auto; background: #fff; color: #111; padding: 18px 20px; border-radius: 10px; border: 1px solid var(--line); font-family: system-ui, -apple-system, sans-serif; }
+.install-title { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; border-bottom: 2px solid #111; margin-bottom: 12px; }
+.install-title h1 { margin: 0 0 4px; font-size: 1.35rem; }
+.install-title span { color: #555; font-size: 0.85rem; }
+.install-figure { margin: 0 0 14px; }
+.install-figure img { display: block; width: 100%; height: auto; border-radius: 6px; border: 1px solid #ccc; }
+.install-figure figcaption { font-size: 0.8rem; color: #555; margin-top: 4px; }
+.install-figure .picture-wait { background: #f3f4f6; color: #555; border-radius: 6px; }
+.install-doc h2 { font-size: 1.05rem; margin: 14px 0 6px; }
+.install-doc h3 { font-size: 0.85rem; margin: 8px 0 2px; text-transform: uppercase; letter-spacing: 0.04em; color: #444; }
+.install-steps ol { list-style: none; margin: 0; padding: 0; }
+.install-steps li { padding: 5px 0; border-bottom: 1px solid #e5e7eb; font-size: 0.95rem; line-height: 1.35; }
+.install-steps li.done { color: #4b5563; }
+.install-steps .box { font-size: 1.1rem; margin-right: 6px; }
+.install-steps .num { margin-right: 2px; }
+.install-shopping ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+@media print {
+  .install-doc { border: 0; padding: 0; max-width: none; }
+  .install-figure { break-inside: avoid; }
+  .install-steps li { break-inside: avoid; }
+}
