@@ -116,6 +116,10 @@ export interface DisplayNode {
   circuit?: string;
   location?: string;
   storage?: string;
+  /** Outlets: the zip-tie colour for everything plugged into it (when colours are on). */
+  tieColor?: string;
+  /** Which story it goes on (1 = ground or first floor, 2 = second story…): zip ties to put on it. */
+  story?: number;
   scheduleGroup?: string;
   /** Teardown: packed away this season (model-only). */
   packed?: boolean;
@@ -198,6 +202,21 @@ export interface Display {
    * runs match the rest of the house (model-only).
    */
   lightLooks?: Record<string, LightLook>;
+  /** How labelled items are also marked with zip ties (model-only). Both off when absent. */
+  marks?: Marks;
+  /**
+   * Highest ID number ever used per prefix, kept only where it is above the IDs still in the
+   * plan (something was deleted), so a printed label never ends up on a different item.
+   */
+  idHigh?: Record<string, number>;
+}
+
+/** Zip-tie marks on labelled items. */
+export interface Marks {
+  /** One colour per outlet: the ties on everything it powers. */
+  colors?: boolean;
+  /** As many ties as the story it goes on (1 = first floor, 2 = second story). */
+  stories?: boolean;
 }
 
 /** Bulb colours, spacing, wire colour and smoothing chosen for a kind of light. */

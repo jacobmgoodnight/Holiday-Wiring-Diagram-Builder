@@ -11,6 +11,20 @@ export function isRun(node: Pick<DisplayNode, 'kind' | 'subtype' | 'category'> |
   return node.kind === 'load' && RUN_CATEGORIES.has(node.category ?? '');
 }
 
+/** A C9 stringer: bulk SPT-1 wire with sockets, cut to length (not a pre-made string). */
+export function isStringer(node: Pick<DisplayNode, 'category' | 'label'>): boolean {
+  return node.category === 'c9' && /\b(stringer|spool|bulk)\b/i.test(node.label);
+}
+
+/**
+ * Wire you can splice a vampire female into anywhere: SPT-1 zip cord and C9 stringer.
+ * (Pre-made light strings and multi-outlet cords have their females where they were made.)
+ */
+export function spliceable(node: Pick<DisplayNode, 'kind' | 'subtype' | 'category' | 'label'> | undefined): boolean {
+  if (!node) return false;
+  return (node.kind === 'cord' && node.subtype === 'spt') || isStringer(node);
+}
+
 /**
  * Socket names of a run with a known socket count: inline females `tap1`…`tapN`, then `end`
  * (unless it has no female at the end). Undefined for anything else.

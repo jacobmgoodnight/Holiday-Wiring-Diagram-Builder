@@ -3,45 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { buildDisplay } from '../outline/build';
 import { syncFromModel } from '../outline/sync';
 import { addNode, replug, updateNode, deleteNode } from './actions';
-import { checklist } from './checklist';
 import { compareDisplays, copyForNextYear, nextTitle, snapshotsToPrune } from './season';
 
 const halloween = readFileSync(new URL('../../fixtures/halloween-2026.outline.txt', import.meta.url), 'utf8');
 const base = () => buildDisplay(halloween, { id: 'h26' }).display;
-
-describe('checklist', () => {
-  it('lists every item outlet by outlet, from the wall outwards', () => {
-    const groups = checklist(base(), 'install');
-    expect(groups.map((g) => g.id)).toEqual(['O01', 'O02', 'O03', 'O04', 'O05', 'O06']);
-    expect(groups.reduce((n, g) => n + g.total, 0)).toBe(55);
-    const o2 = groups[1].rows;
-    expect(o2.map((r) => r.id).slice(0, 4)).toEqual(['O02', 'K02', 'C01', 'S01']);
-    expect(o2[0].depth).toBe(0);
-    expect(o2.find((r) => r.id === 'S01')).toMatchObject({ depth: 3, into: 'C01' });
-    expect(groups[0].rows.find((r) => r.id === 'C02')).toMatchObject({ into: 'K01 · left' });
-  });
-
-  it('marks installed and verified items done; S08 is already installed in the fixture', () => {
-    const groups = checklist(base(), 'install');
-    expect(groups[0].done).toBe(1);
-    expect(groups[0].rows.find((r) => r.id === 'S08')!.done).toBe(true);
-  });
-
-  it('runs teardown from the far end back to the wall, tracking packed and storage', () => {
-    let d = base();
-    d = updateNode(d, 'S07', { packed: true, storage: 'Husky tote' }).display;
-    const o3 = checklist(d, 'teardown')[2];
-    expect(o3.rows.map((r) => r.id)).toEqual([...checklist(d, 'install')[2].rows.map((r) => r.id)].reverse());
-    expect(o3.rows.at(-1)!.id).toBe('O03');
-    expect(o3.rows.find((r) => r.id === 'S07')).toMatchObject({ done: true, storage: 'Husky tote' });
-    expect(o3.done).toBe(1);
-  });
-
-  it('shows signal-only items with their link type', () => {
-    const o5 = checklist(base(), 'install')[4];
-    expect(o5.rows.find((r) => r.label === 'Dukane 8120WIA')).toMatchObject({ signal: 'hdmi', into: 'K03' });
-  });
-});
 
 describe('copy for next year', () => {
   it('bumps the year in the title', () => {

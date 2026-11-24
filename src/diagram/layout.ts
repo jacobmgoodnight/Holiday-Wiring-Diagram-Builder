@@ -60,7 +60,14 @@ export interface Cluster {
   h: number;
 }
 
+/**
+ * 'wide': a tree from left to right (screens and sideways pages). 'tall': an indented tree,
+ * each item under what it plugs into (phones and upright pages).
+ */
+export type LayoutDirection = 'wide' | 'tall';
+
 export interface Layout {
+  direction: LayoutDirection;
   nodes: LayoutNode[];
   edges: LayoutEdge[];
   clusters: Cluster[];
@@ -73,6 +80,7 @@ export interface LayoutOptions {
   focus?: string | null;
   /** Items whose branches are folded away (mind-map style). */
   collapsed?: ReadonlySet<string>;
+  direction?: LayoutDirection;
 }
 
 export const NODE_W = 210;
@@ -87,6 +95,11 @@ export const CLUSTER_HEADER = 30;
 const CLUSTER_GAP = 28;
 const RANK_GAP = 64;
 const NODE_GAP = 12;
+/** Tall layout: how far each level steps in (room for a socket label on the wire). */
+export const INDENT = 44;
+/** Tall layout: where the wire leaves an item, from its left edge. */
+export const TRUNK = 16;
+const TALL_GAP = 8;
 const MARGIN_X = 14;
 const MARGIN_Y = 12;
 
@@ -277,9 +290,37 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
       }
     }
 
+    const top = cursorY + CLUSTER_HEADER + MARGIN_Y;
+    const roots = cluster.members.filter((id) => !cluster.members.some((p) => (kids.get(p) ?? []).includes(id)));
+    if (options.direction === 'tall') {
+      // Indented tree: each item under what it plugs into, one step in, in outline order.
+      let y = top;
+      let maxX = 0;
+      const seenTall = new Set<string>();
+      const put = (id: string, depth: number) => {
+        if (seenTall.has(id)) return;
+        seenTall.add(id);
+        const box = boxes.get(id)!;
+        box.x = MARGIN_X + depth * INDENT;
+        box.y = y;
+        y += box.h + TALL_GAP;
+        maxX = Math.max(maxX, box.x + box.w);
+        for (const c of kids.get(id) ?? []) put(c, depth + 1);
+      };
+      for (const r of roots) put(r, 0);
+      for (const n of boxes.values()) {
+        nodes.push(n);
+        if (n.nodeId) drawn.add(n.nodeId);
+      }
+      const w = Math.max(maxX + MARGIN_X, 260);
+      const h = y - TALL_GAP + MARGIN_Y - cursorY;
+      clusters.push({ id: cluster.id, title: cluster.title, x: 0, y: cursorY, w, h });
+      width = Math.max(width, w);
+      cursorY += h + CLUSTER_GAP;
+      continue;
+    }
     // Tidy tree: one column per depth, leaves stacked in outline order, parents centred on
     // their children. Deterministic, so socket 1 is always above socket 2.
-    const top = cursorY + CLUSTER_HEADER + MARGIN_Y;
     let leafY = top;
     const colBottom = new Map<number, number>();
     let maxX = 0;
@@ -303,7 +344,6 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
       maxX = Math.max(maxX, box.x + box.w);
       return box.y + box.h / 2;
     };
-    const roots = cluster.members.filter((id) => !cluster.members.some((p) => (kids.get(p) ?? []).includes(id)));
     for (const r of roots) place(r, 0);
 
     let bottom = top;
@@ -326,7 +366,7 @@ export function layoutDisplay(display: Display, options: LayoutOptions = {}): La
     edges.push({ id: link.id, source: link.from, target: link.to, kind: 'signal', label: link.signalType?.toUpperCase(), signalType: link.signalType, reference: true });
   }
 
-  return { nodes, edges, clusters, width, height: Math.max(0, cursorY - CLUSTER_GAP) };
+  return { direction: options.direction ?? 'wide', nodes, edges, clusters, width, height: Math.max(0, cursorY - CLUSTER_GAP) };
 }
 
 /** Cluster ids with titles, for the "One outlet" picker. */

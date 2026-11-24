@@ -10,7 +10,7 @@ install and tear it down from a checklist.
 
 **Status: all phases complete except Phase 3 (load checks), deferred.** Build a plan by
 typing or tapping, see it on a photo of your house with glowing lights, install and tear it
-down from a checklist, copy it for next year, print cord labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
+down from the Install tab, copy it for next year, print labels, and back it all up. See [PLAN.md](PLAN.md) for the architecture,
 data model, phases and the decisions that need your review.
 
 ## Using it
@@ -31,7 +31,9 @@ data model, phases and the decisions that need your review.
 * **Re-plug:** select an item → **Move…** → tap the new socket. On a computer you can also
   drag it, or drag a preset from the palette onto a socket.
 * **Undo** with ↶, Ctrl/Cmd+Z, or the Undo button on the message after a change.
-* **Photo** (top toggle): a new photo shows the steps (Measure → Outlets → Lights → Plug in)
+* **Tabs: Photo, Plan, Install.** The app opens on Photo the first time, then on the tab you
+  used last.
+* **Photo**: a new photo shows the steps (Measure → Outlets → Lights → Plug in)
   with a button for the next one; "+ Add item" starts with an outlet or measuring. ↶ ↷ undo
   and redo on the photo. Add a photo of your house (or the sample house), draw light runs
   along the roofline, drop items where they go, and press 🌙 Night to preview. Measure a
@@ -63,6 +65,11 @@ data model, phases and the decisions that need your review.
     L01 end) and the new strand plugs into it. If a strand starts a gap away, plugging it
     in adds a green extension cord sized to the next common length (6, 9, 15, 25, 40, 50,
     100 ft) once the photo is measured. Turn that off in the photo's ⋯ menu.
+  * **SPT-1 zip cord**: draw it along the beds or the eaves, past what it feeds. Females go
+    where things plug in: tap the cord (or "+ Plug in" on it) and a vampire female is
+    spliced in where the item is nearest; anything within 4 ft needs no extension cord. A
+    selected zip cord offers **🔌 Plug in N nearby** to plug in every unplugged item along it
+    in one tap (drawing one says when there are some). It starts with just the end female.
   * **Inline females**: select a zip cord or light string → **✂️ Add inline female** and
     tap where it goes. Drag a female to slide it; tap an open one to plug a strand or a new
     item into it (or remove it). Females keep what is plugged into them when renumbered.
@@ -87,12 +94,27 @@ data model, phases and the decisions that need your review.
   (vampire plugs) plus one at the end. Set them in the details (Females on this run); plug
   into "tap 1", "tap 2"… or "end". Outlets have a **Location** (Front porch, Left side…)
   that shows on the diagram.
-* **Checklist** (top toggle): Install and Teardown lists, outlet by outlet, with big tick
-  boxes. Ticks update the same plan the diagram shows.
-* **Install day**: **✅ Install mode** on the photo walks through the plug-in order (Next
-  step, "✓ L02 is up"). **Install sheet** (⋯ menu, or the photo's ⋯) prints or saves as PDF
-  the photo with numbered items, the plug-in order as numbered steps with boxes to tick, and
-  what to buy.
+* **Install** tab: **Put up** lists the plug-in order as numbered steps with big boxes to
+  tick, the next one up top ("✓ L02 is up"); **Take down** runs it backwards, from the far
+  end back to the wall, with where each thing is stored. For everything or one photo. Ticks
+  update the same plan. The screen stays on while it is open. Shortcuts: tick off on the
+  photo (**✅ Install mode**), print the install sheet, print the plan diagram.
+* **Install sheet** (Install tab, ⋯ menu, or the photo's ⋯): prints or saves as PDF the photo
+  with numbered items, the steps (put up or take down) with boxes to tick, what to buy, and
+  the plan diagram. Leave out what you do not need (no shopping list when you already have
+  everything); the choices are remembered.
+* **Labels and zip ties** (⋯ menu): small labels with the ID big and one useful line: a
+  cord's length on both ends (`C02 · 25 ft`), where lights and props go (`L02 · Garage peak`),
+  or the gear's name. Optionally where it plugs in and the storage spot. Formats: a flag
+  that folds around a cord (reads from both sides), small or large paper labels, or one line
+  each for a label maker (copy, or CSV for P-touch / Dymo). **Zip ties, both optional:** a
+  colour for each outlet (everything it powers gets that colour; pick black, white or green
+  to blend in), and one tie per story (1 = first floor, 2 = second story). The sheet counts
+  the labels and ties to get ready, and lets you set where things go, cord lengths, stories
+  and outlet colours in one list. The Install tab and install sheet show the same dots, and
+  steps say "(2nd story)". IDs are never reused, so a printed label stays right.
+* **Print the plan diagram** (⋯ menu or the Install tab): one outlet per page, wide or tall,
+  sideways or upright.
 * **Cords that no longer reach**: once a photo is measured, an extension cord too short for
   the gap it spans is drawn red and dashed with "needs ~42 ft", and one tap swaps in a long
   enough one. The shopping list starts with these.
@@ -102,9 +124,9 @@ data model, phases and the decisions that need your review.
   or from the measured photo (~). "Only items marked New this year" lists what to buy.
   Copy as text or download a CSV; tap an ID to jump to that item.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
-  Cord and plug labels, Shopping list, Install sheet, Download as Excel, Import from Excel,
-  Download items as CSV, Device list for dashboard (JSON), Sync with other devices, Back up all
-  displays (JSON), Import a backup, Delete.
+  Labels and zip ties, Shopping list, Install sheet, Print the plan diagram, Download as Excel,
+  Import from Excel, Download items as CSV, Device list for dashboard (JSON), Sync with other
+  devices, Back up all displays (JSON), Import a backup, Delete.
 * **My presets**: "Save as preset" on any item; it then shows in the picker.
 * **Back up regularly**: one tap on **Back up** (💾 on a phone) in the top bar downloads every
   display as one JSON file; ⋯ → **Import a backup** restores it. Everything lives in this browser, and
@@ -117,8 +139,10 @@ data model, phases and the decisions that need your review.
   key; the server keeps only the scrambled copy and cannot read it. No account, no
   password, so keep the code private. An edit made on both devices at once keeps the other
   version in Restore points. **Nothing leaves your device unless you turn sync on.**
-* Phones open one outlet at a time; tap **Overall** for everything. **Fit** never shrinks
-  text below readable size; pan instead.
+* **Plan** on a phone uses the **tall layout**: each item under what it plugs into, one step
+  in, so it reads top to bottom without panning sideways. Switch between tall and wide in
+  the diagram's ⋯ menu (remembered on this device). Phones open one outlet at a time; tap
+  **Overall** for everything. **Fit** never shrinks text below readable size; pan instead.
 * After the first visit it works offline, and can be added to the iPhone home screen.
 
 ## Excel
@@ -229,10 +253,11 @@ src/model/actions.ts                  add / re-plug / unplug / delete / edit (pu
 src/model/history.ts                  undo/redo shared by both editors
 src/outline/sync.ts                   model → outline after diagram edits
 src/presets/presets.ts                preset library
-src/model/checklist.ts                install/teardown lists
 src/model/season.ts                   copy for next year, compare, restore-point retention
-src/ui/Checklist.tsx, Dialogs.tsx     field mode, restore/copy/changes dialogs
-src/export/labels.ts, LabelSheet.tsx  cord and plug labels (paper and label maker)
+src/ui/InstallTab.tsx, Dialogs.tsx    install/take-down steps, restore/copy/changes dialogs
+src/export/installSteps.ts            plug-in order and take-down order in words
+src/ui/PlanDiagrams.tsx               printing the plan diagram
+src/export/labels.ts, LabelSheet.tsx  labels and zip-tie marks (paper, flags, label maker)
 src/export/csv.ts, backup.ts          CSV export, JSON backup and safe import
 src/export/xlsx.ts, workbook.ts       Excel: small .xlsx reader/writer, items sheet export/import
 src/export/devices.ts                 device list JSON for other tools (dashboard)

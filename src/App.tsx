@@ -3,7 +3,7 @@ import { Diagram } from './diagram/Diagram';
 import { downloadBlob, downloadPng, downloadSvg, downloadText, fileSlug } from './diagram/exportImage';
 import { BackupError, makeBackup, parseBackup, planImport } from './export/backup';
 import { displayToCsv } from './export/csv';
-import { clusterList, clusterOf, layoutDisplay } from './diagram/layout';
+import { type LayoutDirection, clusterList, clusterOf, layoutDisplay } from './diagram/layout';
 import { layoutToSvg } from './diagram/svg';
 import {
   type ActionResult,
@@ -20,8 +20,7 @@ import {
   unplug,
   updateNode,
 } from './model/actions';
-import { type ChecklistMode, type ChecklistRow, checklist } from './model/checklist';
-import { displayStats, isRun } from './model/graph';
+import { displayStats, isRun, spliceable } from './model/graph';
 import { type Direction, navigate, parentOf } from './model/navigate';
 import { type Change, compareDisplays, copyForNextYear, nextTitle } from './model/season';
 import { type History, initHistory, push, redo, undo } from './model/history';
@@ -56,9 +55,11 @@ import {
   storageAvailable,
   toStored,
 } from './store/db';
-import { Checklist } from './ui/Checklist';
+import { type InstallDirection, InstallTab } from './ui/InstallTab';
+import { DiagramPrint } from './ui/PlanDiagrams';
 import { ChangesDialog, CopyDialog, RestoreDialog } from './ui/Dialogs';
 import { LabelSheet } from './ui/LabelSheet';
+import { assignTieColors } from './export/labels';
 import { FindBox } from './ui/FindBox';
 import { HelpSheet } from './ui/HelpSheet';
 import { NodePanel } from './ui/NodePanel';
@@ -71,7 +72,11 @@ import {
   addMeasure,
   addPlacedNode,
   addView,
+  CORD_REACH_FT,
   moveFemale,
+  nearbyUnplugged,
+  plugIntoCord,
+  plugNearbyIntoCord,
   plugOnPhoto,
   removeFemale,
   removeMeasure,
@@ -165,6 +170,36 @@ function docFromStored(rec: StoredDisplay): Doc {
 }
 
 const isPhone = () => window.matchMedia('(max-width: 720px)').matches;
+
+type Mode = 'photo' | 'plan' | 'install';
+const TAB_KEY = 'wiring-sketchpad.tab';
+const LAYOUT_KEY = 'wiring-sketchpad.layout';
+/** The tab you were on last (Photo the first time). */
+function readTab(): Mode {
+  try {
+    const t = localStorage.getItem(TAB_KEY);
+    return t === 'plan' || t === 'install' ? t : 'photo';
+  } catch {
+    return 'photo';
+  }
+}
+/** Wide (left to right) or tall (indented): your choice, else tall on phones. */
+function readLayout(): LayoutDirection {
+  try {
+    const v = localStorage.getItem(LAYOUT_KEY);
+    if (v === 'wide' || v === 'tall') return v;
+  } catch {
+    // no storage: use the default
+  }
+  return isPhone() ? 'tall' : 'wide';
+}
+const remember = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // private mode: this visit only
+  }
+};
 const finePointer = () => window.matchMedia('(pointer: fine)').matches;
 
 function readPhase0(): string | null {
@@ -250,7 +285,23 @@ export function App() {
     new Promise<boolean>((resolve) => setAsk({ title, message, confirm, resolve }));
   /** True while another display is being opened: edits wait so they cannot land in the wrong one. */
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<'plan' | 'photo' | 'checklist'>('plan');
+  const [mode, setModeState] = useState<Mode>(readTab);
+  const setMode = useCallback((m: Mode | ((prev: Mode) => Mode)) => {
+    setModeState((prev) => {
+      const next = typeof m === 'function' ? m(prev) : m;
+      remember(TAB_KEY, next);
+      return next;
+    });
+  }, []);
+  const [direction, setDirectionState] = useState<LayoutDirection>(readLayout);
+  const setDirection = (d: LayoutDirection) => {
+    remember(LAYOUT_KEY, d);
+    setDirectionState(d);
+    setFitNonce((n) => n + 1);
+  };
+  const [installDir, setInstallDir] = useState<InstallDirection>('up');
+  const [installScope, setInstallScope] = useState('');
+  const [diagramPrint, setDiagramPrint] = useState(false);
   const [viewId, setViewId] = useState<string | undefined>();
   const [intent, setIntent] = useState<PhotoIntent | undefined>();
   const [autoCords, setAutoCords] = useState(() => {
@@ -264,8 +315,6 @@ export function App() {
   const [busyPhoto, setBusyPhoto] = useState(false);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const loadingPhotos = useRef(new Set<string>());
-  const [clMode, setClMode] = useState<ChecklistMode>('install');
-  const [hideDone, setHideDone] = useState(false);
   const [tag, setTag] = useState('');
   const [dialog, setDialog] = useState<null | 'restore' | 'copy' | 'changes'>(null);
   const [changes, setChanges] = useState<{ source: string | null; list: Change[] | null } | null>(null);
@@ -556,7 +605,7 @@ export function App() {
           doRedo();
         }
       }
-      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || installSheet || syncOpen || (phone && detailsOpen));
+      const sheetOpen = !!(picker || photoPicker || ask || dialog || textOpen || helpOpen || labelsOpen || shoppingOpen || installSheet || diagramPrint || syncOpen || (phone && detailsOpen));
       if (e.key === 'Escape' && !picker && !photoPicker && !sheetOpen) {
         if (findOpen) setFindOpen(false);
         else if (intent) setIntent(undefined);
@@ -566,7 +615,7 @@ export function App() {
       }
       // Mind-map keys on the diagram (desktop keyboards).
       const typing = inOtherField || el?.tagName === 'TEXTAREA' || !!el?.isContentEditable;
-      if (typing || sheetOpen || findOpen || renaming || mode === 'checklist' || e.altKey) return;
+      if (typing || sheetOpen || findOpen || renaming || mode === 'install' || e.altKey) return;
       if (e.key === '/' && mode === 'plan') {
         e.preventDefault();
         setFindOpen(true);
@@ -621,8 +670,8 @@ export function App() {
   const clusters = useMemo(() => (display ? clusterList(display) : []), [display]);
   const activeView = view !== OVERALL && !clusters.some((c) => c.id === view) ? OVERALL : view;
   const layout = useMemo(
-    () => (display ? layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView, collapsed: folded }) : null),
-    [display, activeView, folded],
+    () => (display ? layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView, collapsed: folded, direction }) : null),
+    [display, activeView, folded, direction],
   );
   const subtreeOf = useCallback((id: string) => (display ? subtreeIds(display, id) : new Set<string>()), [display]);
   const openPicker = useCallback((t: Target, like?: string) => {
@@ -779,9 +828,17 @@ export function App() {
     setFitNonce((n) => n + 1);
   };
 
-  const toggleRow = (r: ChecklistRow) => {
-    if (clMode === 'install') act((d) => updateNode(d, r.id, { status: r.done ? 'planned' : 'installed' }));
-    else act((d) => updateNode(d, r.id, { packed: r.done ? undefined : true }));
+  /** Show an item from the Install tab: on a photo it is on (the chosen one first), else on the plan. */
+  const showFromInstall = (id: string) => {
+    const n = doc?.result.display.nodes[id];
+    const vs = doc?.result.display.views ?? [];
+    const v = vs.find((x) => x.id === installScope && n?.placements?.[x.id]) ?? vs.find((x) => n?.placements?.[x.id]);
+    if (!v) return showOnDiagram(id);
+    setMode('photo');
+    setViewId(v.id);
+    setIntent(undefined);
+    setSelected(id);
+    setFitNonce((k) => k + 1);
   };
 
   const closeMenu = (e: React.MouseEvent) => {
@@ -931,15 +988,29 @@ export function App() {
   const remembered = (r: ActionResult, node: Pick<DisplayNode, 'kind' | 'label' | 'category'>, opts?: LightOpts): ActionResult =>
     opts && drawnAsLights(node) ? { ...r, display: rememberLook(r.display, node, opts) } : r;
 
-  /** Plug in on the photo (adding an extension cord when a strand does not reach). */
-  const plugHere = (d: Display, childId: string, target: Target) =>
-    photoView ? plugOnPhoto(d, photoView, childId, target, { autoCord: autoCords, isNew: isNewHere(d) }) : replug(d, childId, target);
+  /**
+   * Plug in on the photo (adding an extension cord when a strand does not reach). Into a zip
+   * cord with no female named, a female goes where the item is nearest.
+   */
+  const plugHere = (d: Display, childId: string, target: Target) => {
+    if (!photoView) return replug(d, childId, target);
+    const opts = { autoCord: autoCords, isNew: isNewHere(d) };
+    const into = target.parent ? d.nodes[target.parent] : undefined;
+    if (spliceable(into) && !target.port) return plugIntoCord(d, photoView, childId, target.parent!, opts);
+    return plugOnPhoto(d, photoView, childId, target, { ...opts, reachFt: spliceable(into) ? CORD_REACH_FT : undefined });
+  };
+  /** "Plugged L05 into C01 tap 3 (a new female)". */
+  const pluggedNote = (r: ActionResult, childId: string, parent: string, port?: string) => {
+    const x = r as ActionResult & { port?: string; spliced?: boolean };
+    const where = x.port ?? port;
+    return `Plugged ${childId} into ${parent}${where ? ` ${where.replace(/^tap(\d+)$/, 'tap $1')}` : ''}${x.spliced ? ' (a new female there)' : ''}`;
+  };
   /** Says so when plugging in added an extension cord; true if it did. */
   const cordNote = (res: ActionResult, parent: string | null | undefined) => {
     const r = res as ActionResult & { cordId?: string; cordFt?: number };
     if (r.cordId)
       showToast(
-        `Added ${r.cordId}, a ${r.cordFt ? `${r.cordFt} ft ` : ''}extension cord, to reach ${parent}${r.cordFt ? '' : ' (measure the photo to size it)'}`,
+        `Added ${r.cordId}, ${r.cordFt ? `a ${r.cordFt} ft` : 'an'} extension cord, to reach ${parent}${r.cordFt ? '' : ' (measure the photo to size it)'}`,
         true,
       );
     return !!r.cordId;
@@ -1005,16 +1076,20 @@ export function App() {
       if (!p) return;
       noteUsed(p.id);
       const look = opts ? lightPatch(p, opts) : {};
+      // Zip cord drawn on the photo: just the end female; the others go where things plug in.
+      const females = spliceable(p) && p.kind === 'cord' ? { outputs: 1 } : {};
       // Starting on an open female wins over where "+ Plug in" was pressed.
       const target = snap ?? it.target;
       act(
         (d) => {
-          const r = remembered(addPlacedNode(d, { ...p, ...look, isNew: isNewHere(d) }, photoView.id, placement), p, opts);
+          const r = remembered(addPlacedNode(d, { ...p, ...look, ...females, isNew: isNewHere(d) }, photoView.id, placement), p, opts);
           return target?.parent ? plugHere(r.display, r.nodeId!, target) : r;
         },
         (r, next) => {
           afterPlaced(r, next);
-          cordNote(r, target?.parent);
+          if (cordNote(r, target?.parent)) return;
+          const near = spliceable(p) && r.nodeId ? nearbyUnplugged(next.result.display, photoView, r.nodeId).length : 0;
+          if (near) showToast(`${near} item${near === 1 ? '' : 's'} along ${r.nodeId} can plug into it: tap 🔌 Plug in nearby`);
         },
       );
     }
@@ -1156,7 +1231,7 @@ export function App() {
     return p ? { ...p, id: 'new' } : undefined;
   })();
   // Exports show everything, folded branches included.
-  const fullLayout = () => layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView });
+  const fullLayout = () => layoutDisplay(display, { focus: activeView === OVERALL ? null : activeView, direction });
   const exportSvg = () => downloadSvg(layoutToSvg(fullLayout(), title), title);
   const exportPng = () => downloadPng(layoutToSvg(fullLayout(), title), title).catch((e: Error) => showToast(e.message));
   const stats = displayStats(display);
@@ -1165,8 +1240,7 @@ export function App() {
   const selNode = selected ? display.nodes[selected] : undefined;
   const allTags = [...new Set(Object.values(display.nodes).flatMap((n) => n.tags))].sort();
   const dimmed = tag ? new Set(Object.values(display.nodes).filter((n) => !n.tags.includes(tag)).map((n) => n.id)) : undefined;
-  const groups = mode === 'checklist' ? checklist(display, clMode) : [];
-  const selBarShown = !!selNode && !moving && !intent && mode !== 'checklist';
+  const selBarShown = !!selNode && !moving && !intent && mode !== 'install';
   const selParent = selNode ? homeLink(display, selNode.id) : undefined;
   const selBar = selNode && selBarShown && (
     <SelectionBar
@@ -1208,6 +1282,16 @@ export function App() {
             drawn={drawnAsRun(selNode)}
             canBush={drawnAsLights(selNode)}
             canSplice={isRun(selNode) && selNode.placements?.[photoView.id]?.kind === 'path'}
+            nearby={nearbyUnplugged(display, photoView, selNode.id).length}
+            onPlugNearby={() =>
+              act(
+                (d) => plugNearbyIntoCord(d, photoView, selNode.id, { autoCord: autoCords, isNew: isNewHere(d) }),
+                (r) => {
+                  const n = (r as ActionResult & { plugged: string[] }).plugged;
+                  showToast(`Plugged ${n.join(', ')} into ${selNode.id}, each at its own female`, true);
+                },
+              )
+            }
             onSplice={() => setIntent({ type: 'splice', nodeId: selNode.id })}
             onSwapEnds={() => act((d) => swapEnds(d, selNode.id, photoView.id), () => showToast(`Swapped the plug and the end of ${selNode.id}`, true))}
             onPlace={() => setIntent({ type: 'place', nodeId: selNode.id, name: `${selNode.id} ${selNode.label}` })}
@@ -1298,7 +1382,7 @@ export function App() {
           <details className="menu">
             <summary aria-label="More display actions">⋯</summary>
             <div className="menu-list" role="menu">
-              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setMode((m) => (m === 'checklist' ? 'plan' : m)); setTextOpen(true); }}>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setMode((m) => (m === 'install' ? 'plan' : m)); setTextOpen(true); }}>
                 Edit as text…
               </button>
               <button type="button" role="menuitem" disabled={!persist.current} onClick={(e) => { closeMenu(e); setDialog('copy'); }}>
@@ -1313,7 +1397,7 @@ export function App() {
                 </button>
               )}
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setLabelsOpen(true); }}>
-                Cord and plug labels…
+                Labels and zip ties…
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setShopping({}); }}>
                 Shopping list…
@@ -1326,6 +1410,9 @@ export function App() {
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setInstallSheet({}); }}>
                 Install sheet (print or PDF)…
+              </button>
+              <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setDiagramPrint(true); }}>
+                Print the plan diagram…
               </button>
               <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); exportCsv(); }}>
                 Download items as CSV
@@ -1419,14 +1506,14 @@ export function App() {
 
       <nav className="views" aria-label="View">
         <div className="seg" role="group" aria-label="Mode">
-          <button type="button" className={mode === 'plan' ? 'on' : ''} aria-pressed={mode === 'plan'} onClick={() => { setMode('plan'); setIntent(undefined); setFitNonce((n) => n + 1); }}>
-            Plan
-          </button>
           <button type="button" className={mode === 'photo' ? 'on' : ''} aria-pressed={mode === 'photo'} onClick={() => { setMode('photo'); setMoving(undefined); setFitNonce((n) => n + 1); }}>
             Photo
           </button>
-          <button type="button" className={mode === 'checklist' ? 'on' : ''} aria-pressed={mode === 'checklist'} onClick={() => { setMode('checklist'); setMoving(undefined); setIntent(undefined); }}>
-            Checklist
+          <button type="button" className={mode === 'plan' ? 'on' : ''} aria-pressed={mode === 'plan'} onClick={() => { setMode('plan'); setIntent(undefined); setFitNonce((n) => n + 1); }}>
+            Plan
+          </button>
+          <button type="button" className={mode === 'install' ? 'on' : ''} aria-pressed={mode === 'install'} onClick={() => { setMode('install'); setMoving(undefined); setIntent(undefined); }}>
+            Install
           </button>
         </div>
         {mode === 'plan' && (
@@ -1453,24 +1540,35 @@ export function App() {
         )}
       </nav>
 
-      {mode === 'checklist' ? (
+      {mode === 'install' ? (
         <main className="field-mode">
-          <Checklist
-            groups={groups}
-            mode={clMode}
-            onMode={setClMode}
-            hideDone={hideDone}
-            onHideDone={setHideDone}
-            onToggle={toggleRow}
-            onVerify={(r) => act((d) => updateNode(d, r.id, { status: r.status === 'verified' ? 'installed' : 'verified' }))}
-            onShow={showOnDiagram}
-            onResetPacked={() =>
+          <InstallTab
+            display={display}
+            direction={installDir}
+            onDirection={setInstallDir}
+            scope={installScope}
+            onScope={setInstallScope}
+            onToggle={(st) =>
+              installDir === 'up'
+                ? act((d) => updateNode(d, st.id, { status: st.done ? 'planned' : 'installed' }))
+                : act((d) => updateNode(d, st.id, { packed: st.done ? undefined : true }))
+            }
+            onClearPacked={() =>
               act((d) => {
                 let out = d;
                 for (const n of Object.values(d.nodes)) if (n.packed) out = updateNode(out, n.id, { packed: undefined }).display;
                 return { display: out };
               })
             }
+            onShow={showFromInstall}
+            onPhotoMode={(vid) => {
+              setMode('photo');
+              if (vid) setViewId(vid);
+              setIntent({ type: 'install' });
+              setFitNonce((n) => n + 1);
+            }}
+            onInstallSheet={(vid) => setInstallSheet({ viewId: vid })}
+            onPrintDiagram={() => setDiagramPrint(true)}
           />
         </main>
       ) : (
@@ -1525,7 +1623,7 @@ export function App() {
                   (r) => {
                     setSelected(r.nodeId);
                     if (cordNote(r, parent)) return;
-                    if (!r.warning) showToast(`Plugged ${id} into ${parent}${port ? ` ${port.replace(/^tap/, 'tap ')}` : ''}`, true);
+                    if (!r.warning) showToast(pluggedNote(r, id, parent, port), true);
                   },
                 );
               }}
@@ -1536,7 +1634,7 @@ export function App() {
                   (r) => {
                     setSelected(childId);
                     if (cordNote(r, it.parentId)) return;
-                    if (!r.warning) showToast(`Plugged ${childId} into ${it.parentId} ${it.port.replace(/^tap/, 'tap ')}`, true);
+                    if (!r.warning) showToast(pluggedNote(r, childId, it.parentId, it.port), true);
                   },
                 );
               }}
@@ -1589,6 +1687,7 @@ export function App() {
                   undo={{ can: hist.past.length > 0, run: doUndo }}
                   redo={{ can: hist.future.length > 0, run: doRedo }}
                   onExportSvg={exportSvg}
+                  onDirection={setDirection}
                   onExportPng={exportPng}
                   renamingId={renaming}
                   onStartRename={(id) => {
@@ -1721,10 +1820,20 @@ export function App() {
           onClose={() => setSyncOpen(null)}
         />
       )}
+      {diagramPrint && <DiagramPrint display={display} onClose={() => setDiagramPrint(false)} />}
       {installSheet && <InstallSheet display={display} photoUrls={photoUrls} initialViewId={installSheet.viewId} onClose={() => setInstallSheet(null)} />}
       {labelsOpen && (
         <LabelSheet
           display={display}
+          onPatch={(id, patch) => act((d) => updateNode(d, id, patch))}
+          onMarks={(m) =>
+            act((d) => {
+              // Turning colours on hands each outlet without one a different colour.
+              let out: Display = { ...d, marks: m };
+              if (m.colors) for (const [id, c] of Object.entries(assignTieColors(out))) out = updateNode(out, id, { tieColor: c }).display;
+              return { display: out };
+            })
+          }
           onDownloadCsv={(csv) => downloadText(csv, `${fileSlug(title)}-labels.csv`, 'text/csv')}
           onClose={() => setLabelsOpen(false)}
         />
@@ -1820,6 +1929,9 @@ function PhotoNodeActions(props: {
   canBush: boolean;
   /** A run drawn on this photo: inline females can be spliced in. */
   canSplice: boolean;
+  /** A zip cord: unplugged items close to it that "Plug in nearby" would plug in. */
+  nearby?: number;
+  onPlugNearby?: () => void;
   /** Lights that are outlined as a bush (net lights, wraps) rather than drawn as a run. */
   defaultArea: boolean;
   onPlace: () => void;
@@ -1852,6 +1964,11 @@ function PhotoNodeActions(props: {
           <button type="button" className="primary" onClick={() => props.onDraw(area)}>
             {area ? '🌳' : '✏️'} {placement && placement.kind !== 'point' ? 'Redraw on photo' : area ? 'Outline on photo' : 'Draw on photo'}
           </button>
+          {!!props.nearby && (
+            <button type="button" className="primary" onClick={props.onPlugNearby}>
+              🔌 Plug in {props.nearby} nearby
+            </button>
+          )}
           {props.canSplice && (
             <button type="button" onClick={props.onSplice}>
               ✂️ Add inline female

@@ -528,6 +528,59 @@ Decisions:
   tuning are not in the repository; the unit tests draw the same situations (a downspout at
   the corner, a wobbly hazy edge, blue sky over a grey roof).
 
+## Install round
+
+* **Zip cords** (`plugIntoCord`, `nearbyUnplugged` in `src/photo/actions.ts`): plugging into
+  an SPT-1 zip cord or C9 stringer without naming a female splices one at the point of the
+  cord nearest the item's plug end, or uses an open one within 2 ft of it. A zip cord drawn
+  on the photo starts with only its end female. An item within 4 ft of its female needs no
+  extension cord (its own lead reaches); further, one is added as before.
+* **Phones**: the photo toolbar is one scrolling row with its ⋯ menu pinned, the step guide
+  steps aside while something is selected, and the selected item's actions are one row.
+* **Tabs**: Photo, Plan, Install, remembered per device (Photo the first time).
+* **Install tab** (`src/ui/InstallTab.tsx`): install steps and take-down steps
+  (`takedownSteps`: the install order reversed, outlets left out, with storage spots).
+  Screen Wake Lock while it is open.
+* **Printing**: the install sheet takes include options (photo, steps, what to buy, plan
+  diagram) and a take-down variant; the plan diagram prints one outlet per page from the
+  same SVG as the PNG/SVG download.
+* **Tall layout** (`direction: 'tall'` in `layoutDisplay`): an indented tree, 44 px per
+  level, wires down a trunk 16 px in from each item's left edge and across to the child,
+  socket labels on the trunk. Same items, wires and labels as the wide layout.
+
+Decisions:
+
+* **D47. Females go where things plug in.** Placing females first and then filling them was
+  the slow part; real vampire plugs go wherever an item needs one.
+* **D48. Install replaces Checklist.** The plug-in order is what you follow on the day; the
+  outlet-by-outlet list and its separate "Verified" button are gone ([verified] in the
+  outline still counts as up).
+* **D49. Tall on phones, wide on computers**, each switchable and remembered per device.
+
+## Labels round
+
+* **Labels** (`src/export/labels.ts`): the ID, then one line you need in your hand: a cord's
+  length (both ends get the same label, so the two ends pair up), where lights and props go
+  (the item's Location), or the gear's name. Route and storage are optional extras. Formats:
+  flag (two faces with a wrap strip; the far face upside down so it reads from the other
+  side), small, large, label maker (text or CSV).
+* **Zip-tie marks** (`display.marks`, model-only): `colors` gives each outlet a tie colour
+  (`tieColor`, handed out distinct when turned on, editable), and everything powered from it
+  gets that colour; `stories` gives one tie per story (`story` on items: 1 = ground or first
+  floor). Both off by default. The label sheet counts labels and ties by colour; the Install
+  tab and install sheet show the dots; steps say "(2nd story)".
+* **IDs are never reused** (`display.idHigh`): deleting the highest-numbered item, or an item
+  changing kind, remembers its number so the next new item gets a higher one. Stored only
+  while it is above every ID still in the plan.
+
+Decisions:
+
+* **D50. Physical marks are optional and discreet.** Coloured tape was too visible; zip ties
+  in a colour per outlet and a count per story say "which circuit" and "which ladder" without
+  reading anything.
+* **D51. Labels say what you need in your hand**, not the route: the route changes when you
+  re-plan, the cord's length and where the lights go do not.
+
 ## Replacing Holiday Display Blueprint
 
 This app is now the one planner; Holiday Display Blueprint is retired (no data migrated: it
@@ -544,17 +597,17 @@ held only test entries). From the Blueprint we took only what was worth it:
 
 Not taken (already here, or not wanted): the property layout and zone-map editor, photo
 galleries, multi-page navigation, the Blueprint's cloud sync (this app has its own, D42–D45),
-  the separate lighting stock catalog,
-Field Mode (the Checklist is the field mode), the iOS companion plans. Load totals, quick-edit
+the separate lighting stock catalog, Field Mode (the Install tab does that job), the iOS
+companion plans. Load totals, quick-edit
 and season duplicate were offered and declined for now.
 
 Decisions:
 
-* **D47. Our own .xlsx code instead of SheetJS.** The npm build of SheetJS (0.18.5) has
+* **D52. Our own .xlsx code instead of SheetJS.** The npm build of SheetJS (0.18.5) has
   unfixed security advisories and newer builds are not on npm. A ~200-line reader/writer on
   `fflate` (8 KB, the one new dependency) covers text and number cells, shared strings and
   inline strings, and is loaded only when you use Excel.
-* **D48. Excel import never merges.** It always creates a new display, like a backup import of
+* **D53. Excel import never merges.** It always creates a new display, like a backup import of
   a display that already exists; merging rows into a live plan could silently rewire it.
-* **D49. The device file is export-only and versioned.** Readers should check `format` and
+* **D54. The device file is export-only and versioned.** Readers should check `format` and
   `version`; watts and amps are as entered, never estimated.

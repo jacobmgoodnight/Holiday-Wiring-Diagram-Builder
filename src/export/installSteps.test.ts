@@ -3,7 +3,7 @@ import { updateNode } from '../model/actions';
 import type { PhotoView } from '../model/types';
 import { buildDisplay } from '../outline/build';
 import { addView, setPlacement } from '../photo/actions';
-import { installSteps } from './installSteps';
+import { installSteps, takedownSteps } from './installSteps';
 
 const text = `# Test
 O01 Porch outlet @20A GFCI
@@ -48,5 +48,25 @@ describe('install steps', () => {
       [3, 'L01', false, false],
       [4, 'L02', true, false],
     ]);
+  });
+
+  it('takes it down backwards, from the far end to the wall, with where each thing is stored', () => {
+    let d = buildDisplay(text, { id: 't' }).display;
+    d = updateNode(d, 'C02', { outputs: 3 }).display;
+    d = updateNode(d, 'L01', { outputs: 1 }).display;
+    d = updateNode(d, 'L02', { storage: 'Bin 3' }).display;
+    d = updateNode(d, 'L07', { packed: true }).display;
+    const steps = takedownSteps(d);
+    expect(steps.map((s) => `${s.n}. ${s.text}`)).toEqual([
+      '1. Take down L05 Inflatable.',
+      '2. Unplug L07 Spotlight from S01 socket 2.',
+      '3. Unplug S01 3-way splitter from O01.',
+      '4. Unplug L06 Wreath from C02 tap 2.',
+      '5. Unplug C02 SPT-1 zip cord from O01.',
+      "6. Unplug L02 C9 garage run from L01's end female. Store in Bin 3.",
+      '7. Unplug L01 C9 roofline run from C01.',
+      '8. Unplug C01 green cord 40 ft from O01.',
+    ]);
+    expect(steps.filter((s) => s.done).map((s) => s.id)).toEqual(['L07']);
   });
 });

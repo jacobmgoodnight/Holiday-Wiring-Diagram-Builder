@@ -236,6 +236,16 @@ export function NodePanel({ node, below, plugged, onPatch, onKind, onUnplug, onD
           {node.kind !== 'outlet' && (
             <Field label="Location" wide value={node.location ?? ''} placeholder="Front porch, left of garage…" onCommit={(v) => onPatch({ location: v.trim() || undefined })} />
           )}
+          {node.kind !== 'outlet' && (
+            <label className="field">
+              <span>Story</span>
+              <select aria-label="Story" value={String(node.story ?? 1)} onChange={(e) => onPatch({ story: Number(e.target.value) > 1 ? Number(e.target.value) : undefined })}>
+                <option value="1">Ground / 1st floor</option>
+                <option value="2">2nd story</option>
+                <option value="3">3rd story</option>
+              </select>
+            </label>
+          )}
           <Field label="Storage spot" wide value={node.storage ?? ''} placeholder="Tote 3, garage shelf…" onCommit={(v) => onPatch({ storage: v.trim() || undefined })} />
           <Field
             label="Tags (comma separated)"
