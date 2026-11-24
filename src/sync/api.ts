@@ -9,8 +9,11 @@ export interface SyncServer {
   key: string;
 }
 
-/** Filled in once the server side is set up; until then, sync stays hidden. */
-export const SYNC_SERVER: SyncServer | undefined = undefined;
+/** The sync server (supabase/migrations/*_hwd_sync*.sql). The key is the project's public one. */
+export const SYNC_SERVER: SyncServer | undefined = {
+  url: 'https://rwqclcpmtuebxndadkxv.supabase.co',
+  key: 'sb_publishable_n9bHU-XwYaLOHmC_dh3UEw_aEGuoqBj',
+};
 
 const OVERRIDE = 'wiring-sketchpad.syncServer';
 

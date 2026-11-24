@@ -96,6 +96,7 @@ import { syncServer } from './sync/api';
 import { normalizeCode } from './sync/code';
 import type { SyncOutcome } from './sync/engine';
 import { useSync } from './sync/useSync';
+import { isUntouchedExample } from './sync/example';
 
 const PHASE0_KEY = 'wiring-sketchpad.phase0.outline';
 const OVERALL = '__overall__';
@@ -1068,6 +1069,23 @@ export function App() {
     const code = normalizeCode(decodeURIComponent(m[1]));
     if (code && server) setSyncOpen({ link: code });
   }, [server]);
+  /** Join with a code; this device's untouched starter example is dropped, not sent. */
+  const joinSync = async (code: string) => {
+    const dropped: string[] = [];
+    await sync.join(code, async (remote) => {
+      if (!Object.keys(remote.displays).length) return;
+      for (const rec of await allDisplays())
+        if (!remote.displays[rec.id] && isUntouchedExample(rec)) {
+          await deleteDisplay(rec.id);
+          dropped.push(rec.id);
+        }
+    });
+    await refreshList();
+    if (docRef.current && dropped.includes(docRef.current.id)) {
+      const rest = await listDisplays();
+      if (rest.length) await switchTo(rest[0].id);
+    }
+  };
   const forgetCloud = async () => {
     if (!(await confirmInApp('Delete the cloud copy', 'Delete the synced copy from the server? The plans on each device stay where they are, and sync turns off here.', 'Delete cloud copy'))) return;
     try {
@@ -1616,7 +1634,7 @@ export function App() {
           status={sync.status}
           linkCode={syncOpen.link}
           onTurnOn={sync.turnOn}
-          onJoin={sync.join}
+          onJoin={joinSync}
           onSyncNow={() => void sync.syncNow()}
           onTurnOff={() => {
             void sync.turnOff();

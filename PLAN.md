@@ -512,8 +512,11 @@ Decisions:
 
 Decisions:
 
-* **D42. Sync is hidden until the server is switched on**, and the migration is not applied
-  until you say so. Until then nothing in the app talks to any server.
+* **D42. Sync talks to a server only once you turn it on.** The server is the hwd_ tables and
+  functions in the shared Supabase project (applied 2026-11-24; signed-in users of the other
+  apps cannot call them, only the public key can). Supabase's linter warns that the public
+  key can call these security-definer functions: that is the design, as they are the only
+  way in and each needs the lookup id from a sync code.
 * **D43. The code is the key, with no account.** Simple for a family (type it on the second
   device), and the server never holds anything readable. Lose the code and the cloud copy is
   unreadable, but every device still has its plans and can start a new code.

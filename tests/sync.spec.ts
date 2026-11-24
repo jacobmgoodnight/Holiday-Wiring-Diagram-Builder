@@ -124,6 +124,8 @@ test('sync: turn on here, join on the other device; plans, photos and edits go a
   await sheet.getByRole('button', { name: 'Close' }).click();
   const picker = p2.getByRole('combobox', { name: 'Display' });
   await expect(picker.locator('option', { hasText: 'Synced house' })).toHaveCount(1);
+  // Each device started with the example plan; joining keeps one, not two.
+  await expect(picker.locator('option', { hasText: '(example)' })).toHaveCount(1);
   await picker.selectOption({ label: 'Synced house' });
   await p2.getByRole('button', { name: 'Photo', exact: true }).click();
   await expect(p2.locator('.photo-stage img')).toBeVisible();

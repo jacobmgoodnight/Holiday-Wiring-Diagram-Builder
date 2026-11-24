@@ -128,8 +128,11 @@ export function useSync({ ready, server, beforeSync, afterSync, editSeq }: Optio
     await run();
   };
 
-  /** Join plans synced from another device. Checks the code finds them first. */
-  const join = async (input: string) => {
+  /**
+   * Join plans synced from another device. Checks the code finds them first; `onFound` runs
+   * once they are found, before anything from this device is sent.
+   */
+  const join = async (input: string, onFound?: (remote: SyncDoc) => Promise<void>) => {
     if (!server) throw new SyncJoinError('Sync is not available in this version of the app.');
     const code = normalizeCode(input);
     if (!code) throw new SyncJoinError('That is not a sync code. It has 24 letters and numbers, like 7KQM-2XRD-….');
@@ -138,11 +141,13 @@ export function useSync({ ready, server, beforeSync, afterSync, editSeq }: Optio
       const keys = await deriveKeys(code);
       const row = await syncApi(server).pull(keys.lookup);
       if (!row) throw new SyncJoinError('No synced plans use that code. Check it on your other device (⋯ → Sync with other devices).');
+      let remote: SyncDoc;
       try {
-        await openJson<SyncDoc>(keys, row.doc, 'doc');
+        remote = await openJson<SyncDoc>(keys, row.doc, 'doc');
       } catch {
         throw new SyncJoinError('That code does not open the synced plans.');
       }
+      await onFound?.(remote);
     } catch (e) {
       setStatus({ busy: false });
       throw e;

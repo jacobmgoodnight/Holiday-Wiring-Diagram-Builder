@@ -103,13 +103,13 @@ data model, phases and the decisions that need your review.
   Copy as text or download a CSV; tap an ID to jump to that item.
 * **⋯ menu**: Edit as text, Copy for next year, Changes since last year, Restore points,
   Cord and plug labels, Shopping list, Install sheet, Download items as CSV, Sync with other
-  devices (once available), Back up all displays (JSON), Import a backup, Delete.
+  devices, Back up all displays (JSON), Import a backup, Delete.
 * **My presets**: "Save as preset" on any item; it then shows in the picker.
 * **Back up regularly** (⋯ → Back up all displays). Everything lives in this browser, and
   clearing site data deletes it; after a fair amount of work the app reminds you to back up.
   On iPhone, add it to the Home Screen so Safari keeps your plans (the app shows a one-time
   tip). When a new version is published, a note offers to reload.
-* **Sync with other devices** (⋯ menu, once the server side is switched on): turn it on and
+* **Sync with other devices** (⋯ menu): turn it on and
   type the code on your other device, or open the sync link there. Plans and photos are
   scrambled (end-to-end encrypted) on your device before they are sent, with the code as the
   key; the server keeps only the scrambled copy and cannot read it. No account, no
