@@ -118,6 +118,11 @@ button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2p
 .bar-actions { display: flex; align-items: center; gap: 6px; }
 .save { font-size: 0.8rem; color: var(--muted); margin-right: 4px; }
 .save-failed, .save-unavailable { color: var(--warn); }
+.narrow-only { display: none; }
+@media (max-width: 720px) {
+  .wide-only { display: none; }
+  .narrow-only { display: inline; }
+}
 
 .views { display: flex; gap: 6px; padding: 8px 16px; overflow-x: auto; scrollbar-width: thin; }
 .chip { flex: none; border-radius: 999px; min-height: 36px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }

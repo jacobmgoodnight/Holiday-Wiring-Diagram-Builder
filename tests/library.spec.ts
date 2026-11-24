@@ -109,3 +109,48 @@ test('a file that is not a backup is refused with a reason', async ({ page }) =>
   await page.getByLabel('Backup file').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
   await expect(page.locator('.toast')).toContainText('not a Wiring Sketchpad backup');
 });
+
+test('one-click Back up button downloads the same backup', async ({ page }) => {
+  await load(page, halloween);
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Back up', exact: true }).click();
+  const file = await dl;
+  expect(file.suggestedFilename()).toMatch(/^wiring-sketchpad-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  const backup = JSON.parse(readFileSync((await file.path())!, 'utf8'));
+  expect(backup.format).toBe('wiring-sketchpad-backup');
+  expect(backup.displays.some((d: { title: string }) => d.title === 'Halloween 2026')).toBe(true);
+});
+
+test('Excel: download, then import it back as a new display', async ({ page }) => {
+  await load(page, halloween);
+  const dl = page.waitForEvent('download');
+  await menu(page, 'Download as Excel (.xlsx)');
+  const file = await dl;
+  expect(file.suggestedFilename()).toBe('halloween-2026.xlsx');
+
+  await page.getByLabel('Excel file').setInputFiles((await file.path())!);
+  await expect(page.locator('.toast')).toContainText('Imported "Halloween 2026 (imported)" with 55 items as a new display.');
+  await expectText(page, /^# Halloween 2026 \(imported\)\n/);
+  // The original is still there, unchanged.
+  await page.getByRole('combobox', { name: 'Display' }).selectOption({ label: 'Halloween 2026' });
+  await expectText(page, halloween);
+});
+
+test('an Excel file that is not a workbook is refused with a reason', async ({ page }) => {
+  await page.goto('./');
+  await expect(page.getByRole('combobox', { name: 'Display' })).toBeVisible();
+  await page.getByLabel('Excel file').setInputFiles({ name: 'x.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from('nope') });
+  await expect(page.locator('.toast')).toContainText('not an Excel workbook');
+});
+
+test('device list for the dashboard', async ({ page }) => {
+  await load(page, halloween);
+  const dl = page.waitForEvent('download');
+  await menu(page, 'Device list for dashboard (JSON)');
+  const file = await dl;
+  expect(file.suggestedFilename()).toBe('halloween-2026-devices.json');
+  const data = JSON.parse(readFileSync((await file.path())!, 'utf8'));
+  expect(data.format).toBe('holiday-devices');
+  expect(data.devices).toHaveLength(55);
+  expect(data.devices.find((d: { id: string }) => d.id === 'C02')).toMatchObject({ plugsInto: 'K01', socket: 'left', outlet: 'O01' });
+});
