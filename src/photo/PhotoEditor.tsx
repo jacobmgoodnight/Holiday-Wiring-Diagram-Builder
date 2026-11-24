@@ -32,7 +32,7 @@ import {
 } from './geometry';
 import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
 import { lookFor } from './lightOpts';
-import { type EdgeMap, loadEdgeMap, snapPoint, traceEdge } from './edges';
+import { type EdgeMap, followEdge, loadEdgeMap, snapPoint } from './edges';
 import { type DrawShape, MEGA_TREE_STRANDS, SHAPE_HINT, SHAPE_TAPS, megaTreeStrands, shapePoints } from './shapes';
 import { installSteps } from '../export/installSteps';
 
@@ -378,11 +378,20 @@ export function PhotoEditor(props: Props) {
         setDraft([toFrac(s.at, view)]);
         setSegs([1]);
       } else {
-        // Snap the tap onto an edge, and follow the edge from the last point.
-        const q = map ? snapPoint(map, p, 16 * u) : p;
-        const pts = map && draft.length ? traceEdge(map, toPx(draft[draft.length - 1], view), q) : [q];
-        setDraft((d) => [...d, ...pts.map((x) => toFrac(x, view))]);
-        setSegs((sg) => [...sg, pts.length]);
+        // Snap the tap onto an edge, and follow the edge from the last point. The run ends on
+        // the edge near the tap; from the first tap it may also start a little to the side, so
+        // it stays on one edge (not when it starts on a socket: that end is plugged in).
+        const r = 16 * u;
+        if (!map || !draft.length) {
+          const q = map ? snapPoint(map, p, r) : p;
+          setDraft((d) => [...d, toFrac(q, view)]);
+          setSegs((sg) => [...sg, 1]);
+        } else {
+          const f = followEdge(map, toPx(draft[draft.length - 1], view), p, r, { freeStart: draft.length === 1 && !snap });
+          const pts = f.points.map((x) => toFrac(x, view));
+          setDraft((d) => (d.length === 1 && !snap ? [toFrac(f.start, view), ...pts] : [...d, ...pts]));
+          setSegs((sg) => [...sg, pts.length]);
+        }
       }
     } else if (intent.type === 'scale') setDraft((d) => (d.length >= 2 ? [f] : [...d, f]));
     else if (intent.type === 'splice') {
