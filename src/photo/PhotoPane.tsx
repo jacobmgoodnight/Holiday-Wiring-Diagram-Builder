@@ -12,7 +12,7 @@ import { PictureSheet } from './Picture';
 
 /** Light styles offered by "Draw lights" (built-in presets): along the house, and on bushes. */
 const RUN_PRESETS = ['c9', 'c9stringer', 'mini', 'icicle', 'pathway'];
-const AREA_PRESETS = ['net', 'bushmini', 'tree'];
+const AREA_PRESETS = ['net', 'bushmini', 'tree', 'megatree'];
 
 interface Props {
   display: Display;
@@ -298,7 +298,7 @@ export function PhotoPane(props: Props) {
                     <button
                       type="button"
                       className="tile-main"
-                      aria-label={g.area ? `Light a bush with ${p.name}` : `Draw ${p.name}`}
+                      aria-label={g.area && p.id !== 'megatree' ? `Light a bush with ${p.name}` : `Draw ${p.name}`}
                       onClick={() => {
                         setSheet(null);
                         props.setIntent({ type: 'draw', presetId: p.id, name: p.name, area: g.area });

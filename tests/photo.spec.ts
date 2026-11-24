@@ -464,3 +464,29 @@ test('install mode ticks items on the photo; the install sheet lists the plug-in
   // Same ticks as the Checklist (and the outline).
   await expectText(page, { contains: 'Inflatable [installed]' });
 });
+
+test('shapes: outline a window from two corners, and a mega tree from three taps', async ({ page }) => {
+  await sampleHouse(page);
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw Mini-light string' }).click();
+  await page.getByRole('group', { name: 'Shape' }).getByRole('button', { name: '▭ Outline' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('Tap two opposite corners of the window or door');
+  const done = page.locator('.photo-banner').getByRole('button', { name: 'Done' });
+  await tap(page, 360, 490);
+  await expect(done).toBeDisabled();
+  await tap(page, 500, 600);
+  await done.click();
+  // A closed outline: four corners and back to the first.
+  await expect(page.getByRole('button', { name: 'L01 Mini lights light run' })).toBeVisible();
+  await expect(page.getByLabel('Point 5 of L01')).toHaveCount(1);
+  await expect(page.getByLabel('Point 6 of L01')).toHaveCount(0);
+
+  await tap(page, 100, 150);
+  await page.getByRole('button', { name: '✏️ Draw lights' }).click();
+  await page.getByRole('button', { name: 'Draw Mega tree' }).click();
+  await expect(page.locator('.photo-banner')).toContainText('Tap the top of the tree, then the left and right of its base');
+  for (const [x, y] of [[1480, 520], [1400, 760], [1560, 760]] as const) await tap(page, x, y);
+  await page.locator('.photo-banner').getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('button', { name: 'L02 Mega tree on a bush' })).toBeVisible();
+  await expectText(page, { contains: 'Mega tree' });
+});

@@ -33,6 +33,7 @@ import {
 import { type LightOpts, LightOptions, lightOptsOf } from './LightOptions';
 import { lookFor } from './lightOpts';
 import { type EdgeMap, loadEdgeMap, snapPoint, traceEdge } from './edges';
+import { type DrawShape, MEGA_TREE_STRANDS, SHAPE_HINT, SHAPE_TAPS, megaTreeStrands, shapePoints } from './shapes';
 import { installSteps } from '../export/installSteps';
 
 const FOLLOW_KEY = 'wiring-sketchpad.followEdges';
@@ -122,6 +123,13 @@ interface Xf {
 }
 
 const TAP_SLOP = 6;
+/** Shape choices while drawing a run. */
+const SHAPES: [DrawShape, string][] = [
+  ['free', 'Free'],
+  ['outline', '▭ Outline'],
+  ['arch', '⌒ Arch'],
+  ['wrap', '🌀 Wrap'],
+];
 /** Bulb sizes follow the zoom in steps, so pinching does not redraw every frame. */
 const quantize = (k: number) => Math.pow(1.2, Math.round(Math.log(k) / Math.log(1.2)));
 
@@ -142,6 +150,11 @@ export function PhotoEditor(props: Props) {
   const [edges, setEdges] = useState<EdgeMap | undefined>();
   /** How many draft points each tap added (a traced stretch is several), for "Undo point". */
   const [segs, setSegs] = useState<number[]>([]);
+  /** Drawing a shape (window outline, arch, wrap) instead of tapping along: its taps so far. */
+  const [shapeMode, setShapeMode] = useState<DrawShape>('free');
+  const [shapeTaps, setShapeTaps] = useState<Pt[]>([]);
+  /** Drawing a mega tree: tap its top, then both sides of the base. */
+  const fanMode = intent?.type === 'draw' && !!intent.area && !!draftBase && areaStyle(draftBase) === 'fan';
   /** Drawing started on an open female: the new run plugs in there. */
   const [snap, setSnap] = useState<{ parent: string; port: string } | undefined>();
   /** An inline female being slid along its run. */
@@ -167,6 +180,8 @@ export function PhotoEditor(props: Props) {
     setFeet('');
     setSnap(undefined);
     setSegs([]);
+    setShapeMode('free');
+    setShapeTaps([]);
     setRefName(undefined);
     // New lights start with the look last chosen for that kind, so the house stays matching.
     setOpts(
@@ -276,6 +291,19 @@ export function PhotoEditor(props: Props) {
     return Math.min(4, Math.max(fitK * 0.5, k));
   };
 
+  /** Shape taps → the draft: the generated outline, arch or wrap once complete. */
+  const applyShapeTaps = (taps: Pt[]) => {
+    setShapeTaps(taps);
+    setSegs(taps.map(() => 1));
+    if (fanMode) {
+      setDraft(taps);
+      return;
+    }
+    const sh = shapeMode as Exclude<DrawShape, 'free'>;
+    const made = taps.length >= SHAPE_TAPS[sh] ? shapePoints(sh, taps.map((t) => toPx(t, view))) : undefined;
+    setDraft(made ? made.map((x) => toFrac(x, view)) : taps);
+  };
+
   const tapAt = (p: Pt) => {
     if (!intent) {
       props.onSelect(undefined);
@@ -285,7 +313,13 @@ export function PhotoEditor(props: Props) {
     const f = toFrac(p, view);
     const u = 1 / xfRef.current.k;
     if (intent.type === 'place') props.onPlacePoint(intent, f);
-    else if (intent.type === 'draw') {
+    else if (intent.type === 'draw' && (fanMode || shapeMode !== 'free')) {
+      // Shapes: collect their taps (snapped to edges when following them), then make the run.
+      const map = follow ? edges : undefined;
+      const q = map ? snapPoint(map, p, 16 * u) : p;
+      const need = fanMode ? 3 : SHAPE_TAPS[shapeMode as Exclude<DrawShape, 'free'>];
+      applyShapeTaps(shapeTaps.length >= need ? [toFrac(q, view)] : [...shapeTaps, toFrac(q, view)]);
+    } else if (intent.type === 'draw') {
       // Starting on an open female (the end of the last strand) plugs the new one in there.
       const s = draft.length ? undefined : nearestOpenSocket(display, view, p, 24 * u, intent.nodeId);
       const map = follow ? edges : undefined;
@@ -700,7 +734,13 @@ export function PhotoEditor(props: Props) {
           {drawing && (
             <>
               <span>
-                {drawing.area ? 'Tap around the bush to outline ' : 'Tap along the house to draw '}
+                {fanMode
+                  ? 'Tap the top of the tree, then the left and right of its base, for '
+                  : shapeMode !== 'free'
+                    ? `${SHAPE_HINT[shapeMode]} for `
+                    : drawing.area
+                      ? 'Tap around the bush to outline '
+                      : 'Tap along the house to draw '}
                 <b>{drawing.name}</b>
                 {drawing.target?.parent ? (
                   <>
@@ -722,6 +762,7 @@ export function PhotoEditor(props: Props) {
                 type="button"
                 disabled={!draft.length}
                 onClick={() => {
+                  if (fanMode || shapeMode !== 'free') return applyShapeTaps(shapeTaps.slice(0, -1));
                   // A traced stretch goes back in one step.
                   const n = segs[segs.length - 1] ?? 1;
                   if (segs.length <= 1) setSnap(undefined);
@@ -748,7 +789,33 @@ export function PhotoEditor(props: Props) {
               >
                 🧲 Follow edges{follow && photoUrl && !edges ? ' (reading photo…)' : ''}
               </button>
-              <button type="button" className="primary" disabled={draft.length < (drawing.area ? 3 : 2)} onClick={() => props.onFinishRun(drawing, draft, opts, snap)}>
+              {!drawing.area && (
+                <span className="seg shape-seg" role="group" aria-label="Shape">
+                  {SHAPES.map(([k, name]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={shapeMode === k ? 'on' : ''}
+                      aria-pressed={shapeMode === k}
+                      onClick={() => {
+                        setShapeMode(k);
+                        setShapeTaps([]);
+                        setDraft([]);
+                        setSegs([]);
+                        setSnap(undefined);
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </span>
+              )}
+              <button
+                type="button"
+                className="primary"
+                disabled={fanMode ? shapeTaps.length < 3 : shapeMode !== 'free' ? shapeTaps.length < SHAPE_TAPS[shapeMode] : draft.length < (drawing.area ? 3 : 2)}
+                onClick={() => props.onFinishRun(drawing, draft, opts, snap)}
+              >
                 Done
               </button>
               <button type="button" onClick={props.onCancelIntent}>
@@ -1033,7 +1100,12 @@ export function Lights(props: LightsProps) {
   const { node, placement, view, u, ub, night, grad, selected, editable, dim, target, draft, hideLabel, onDown, onMove, onUp } = props;
   const area = placement.kind === 'area';
   const style = runStyle(node);
-  const shape = useMemo(() => shapePx(placement, view, node.smooth) ?? [], [placement, view.width, view.height, node.smooth]);
+  // A mega tree keeps its three points (top, base left, base right); other bushes are rounded.
+  const fan = area && areaStyle(node) === 'fan';
+  const shape = useMemo(
+    () => (fan && placement.kind === 'area' ? placement.points.map((q) => toPx(q, view)) : (shapePx(placement, view, node.smooth) ?? [])),
+    [placement, view.width, view.height, node.smooth, fan],
+  );
   const colors = bulbColors(node);
   const wire = wireColorOf(node);
   const spacing = bulbSpacingPx(node, view);
@@ -1045,9 +1117,17 @@ export function Lights(props: LightsProps) {
   const stride = Math.max(1, Math.ceil((shapeKind === 'c9' ? w * 1.5 : w * 1.9) / spacing));
   const step = spacing * stride;
   const net = area && areaStyle(node) === 'net';
+  const strands = useMemo(() => (fan && shape.length >= 3 ? megaTreeStrands(shape[0], shape[1], shape[2], MEGA_TREE_STRANDS) : []), [fan, shape]);
   const bulbs = useMemo(
-    () => (style === 'plain' && !area ? [] : area ? areaBulbs(shape, step, net ? 'net' : 'wrap') : pointsAlong(shape, step)),
-    [shape, step, style, area, net],
+    () =>
+      fan
+        ? strands.flatMap(([a, z]) => pointsAlong([a, z], step).slice(1))
+        : style === 'plain' && !area
+          ? []
+          : area
+            ? areaBulbs(shape, step, net ? 'net' : 'wrap')
+            : pointsAlong(shape, step),
+    [shape, step, style, area, net, fan, strands],
   );
   const line = shape.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const b = useMemo(() => bounds(shape), [shape]);
@@ -1090,7 +1170,13 @@ export function Lights(props: LightsProps) {
     const rot = (i: number) => ((i * 53) % 7) * 15 - 45;
     body = (
       <>
-        {net ? <NetMesh id={fid} ring={shape} step={step} box={b} wire={wire} width={wireW * 0.8} /> : <polyline points={bulbs.map((p) => p.join(',')).join(' ')} fill="none" stroke={wire} strokeWidth={wireW * 0.8} opacity={0.8} />}
+        {fan ? (
+          strands.map(([a, z], i) => <line key={`st${i}`} x1={a[0]} y1={a[1]} x2={z[0]} y2={z[1]} stroke={wire} strokeWidth={wireW * 0.8} opacity={0.85} />)
+        ) : net ? (
+          <NetMesh id={fid} ring={shape} step={step} box={b} wire={wire} width={wireW * 0.8} />
+        ) : (
+          <polyline points={bulbs.map((p) => p.join(',')).join(' ')} fill="none" stroke={wire} strokeWidth={wireW * 0.8} opacity={0.8} />
+        )}
         {night && bulbs.map((p, i) => halo(p, i, w * 0.9))}
         {bulbs.map((p, i) => bulb(p, i, shapeKind === 'mini' ? rot(i) : 0))}
       </>

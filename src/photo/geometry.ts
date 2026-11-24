@@ -357,10 +357,11 @@ export function cordFor(gap: number): number {
   return CORD_SIZES_FT.find((s) => s >= need) ?? Math.ceil(need / 50) * 50;
 }
 
-export type AreaStyle = 'net' | 'wrap';
+export type AreaStyle = 'net' | 'wrap' | 'fan';
 
-/** Net lights make a diamond mesh; anything else is wrapped through the bush. */
+/** Net lights make a diamond mesh; a mega tree is a fan of strands; anything else is wrapped. */
 export function areaStyle(node: Pick<DisplayNode, 'label' | 'category'>): AreaStyle {
+  if (/\bmega ?tree\b/i.test(node.label)) return 'fan';
   return /\bnet\b/i.test(node.label) || node.category === 'icicle' ? 'net' : 'wrap';
 }
 
