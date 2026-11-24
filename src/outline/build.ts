@@ -8,6 +8,7 @@
  */
 import type { Comment, Diagnostic, Display, DisplayNode, Link, Season } from '../model/types';
 import { ID_PREFIX } from '../model/types';
+import { idHighAfter } from '../model/actions';
 import { matchLines } from './lineMatch';
 import { type ParsedLine, parseLines } from './parse';
 
@@ -159,6 +160,8 @@ export function buildDisplay(text: string, options: BuildOptions = {}): BuildRes
   const bump = (id: string) => maxByPrefix.set(id[0], Math.max(maxByPrefix.get(id[0]) ?? 0, idNumber(id)));
   taken.forEach(bump);
   if (previous) Object.keys(previous.display.nodes).forEach(bump);
+  // Numbers used before (deleted items) are never handed out again.
+  for (const [prefix, n] of Object.entries(previous?.display.idHigh ?? {})) maxByPrefix.set(prefix, Math.max(maxByPrefix.get(prefix) ?? 0, n));
   for (const l of items) {
     if (!isDefiner(l) || lineNodeIds[l.index]) continue;
     const prefix = ID_PREFIX[l.parse!.fields.kind];
@@ -338,7 +341,12 @@ export function buildDisplay(text: string, options: BuildOptions = {}): BuildRes
     copiedFrom: previous?.display.copiedFrom,
     views: previous?.display.views,
     lightLooks: previous?.display.lightLooks,
+    marks: previous?.display.marks,
   };
+  // Remember ID numbers of items the edit removed (or that changed kind and got a new ID).
+  if (previous) display.idHigh = idHighAfter(previous.display, display);
+  if (!display.idHigh) delete display.idHigh;
+  if (!display.marks || (!display.marks.colors && !display.marks.stories)) delete display.marks;
   if (!display.views?.length) delete display.views;
   if (!display.lightLooks) delete display.lightLooks;
   if (!display.trailingBlank) delete display.trailingBlank;

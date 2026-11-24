@@ -17,6 +17,9 @@ import {
   removeMeasure,
   removeView,
   setPlacement,
+  nearbyUnplugged,
+  plugIntoCord,
+  plugNearbyIntoCord,
   spliceFemale,
   swapEnds,
   updateView,
@@ -433,5 +436,55 @@ describe('cords that no longer reach', () => {
     expect(check.lines[0]).toMatchObject({ item: `${r.cordId} Green extension cord (25 ft)`, qty: 'needs ~42 ft', detail: 'to reach L01 on “Front” · use a 50 ft cord' });
     // Without a scale nothing is flagged (lengths are unknown).
     expect(wiringLines(moved, view)[0].short).toBeUndefined();
+  });
+});
+
+describe('plugging into a zip cord where things are', () => {
+  // 20 px a foot. C01 runs along y = 500 from x = 200 to 1800 with only its end female.
+  const fv: PhotoView = { ...view, feetPerPx: 0.05 };
+  const yard = () => {
+    let d = addView(buildDisplay('O01 Porch\n  C01 SPT-1 zip cord\nL01 Net lights\nL02 Net lights\nL03 Inflatable\n', { id: 'z' }).display, fv).display;
+    d = updateNode(d, 'C01', { outputs: 1 }).display;
+    d = setPlacement(d, 'C01', 'v1', { kind: 'path', points: [[0.1, 0.5], [0.9, 0.5]] }).display;
+    d = setPlacement(d, 'L01', 'v1', { kind: 'area', points: [[0.3, 0.53], [0.35, 0.6], [0.25, 0.6]] }).display; // 1.5 ft below the cord
+    d = setPlacement(d, 'L02', 'v1', { kind: 'area', points: [[0.6, 0.6], [0.65, 0.7], [0.55, 0.7]] }).display; // 5 ft below
+    return setPlacement(d, 'L03', 'v1', { kind: 'point', x: 0.5, y: 0.9 }).display; // 20 ft away
+  };
+  const portOf = (d: ReturnType<typeof yard>, child: string) => {
+    const link = d.links.find((l) => l.to === child)!;
+    return socketLabels(d, link.from).get(link.id);
+  };
+
+  it('splices a female where the item is nearest, and its own lead reaches it', () => {
+    const r = plugIntoCord(yard(), fv, 'L01', 'C01');
+    expect(r).toMatchObject({ port: 'tap1', spliced: true });
+    expect(r.cordId).toBeUndefined(); // 1.5 ft: the net's own lead reaches
+    expect(portOf(r.display, 'L01')).toBe('tap1');
+    const pl = r.display.nodes.C01.placements!.v1;
+    expect(pl.kind === 'path' && pl.taps![0]).toBeCloseTo(0.25, 2);
+    // Further off (5 ft), it still gets its own female, and an extension cord to reach it.
+    const r2 = plugIntoCord(r.display, fv, 'L02', 'C01');
+    expect(r2.port).toBe('tap2');
+    expect(r2.cordFt).toBe(9);
+  });
+
+  it('uses an open female that is already close by instead of adding another', () => {
+    const d = spliceFemale(yard(), 'C01', 'v1', 0.26).display;
+    const r = plugIntoCord(d, fv, 'L01', 'C01');
+    expect(r).toMatchObject({ port: 'tap1', spliced: false });
+    expect(inlineFemales(r.display.nodes.C01)).toBe(1);
+  });
+
+  it('plugs in everything nearby in one go, in order along the cord', () => {
+    const d = yard();
+    expect(nearbyUnplugged(d, fv, 'C01')).toEqual(['L01', 'L02']); // not the inflatable 20 ft away, not the outlet
+    const r = plugNearbyIntoCord(d, fv, 'C01');
+    expect(r.plugged).toEqual(['L01', 'L02']);
+    // L02 is 5 ft off, so it comes in through an extension cord plugged into tap 2.
+    const cord = r.display.links.find((l) => l.to === 'L02')!.from;
+    expect([portOf(r.display, 'L01'), portOf(r.display, cord)]).toEqual(['tap1', 'tap2']);
+    expect(nearbyUnplugged(r.display, fv, 'C01')).toEqual([]);
+    // Only zip cords and stringers take vampire females anywhere.
+    expect(nearbyUnplugged(d, fv, 'L01')).toEqual([]);
   });
 });

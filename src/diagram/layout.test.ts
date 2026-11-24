@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildDisplay } from '../outline/build';
-import { type Layout, clusterList, layoutDisplay, wrap } from './layout';
-import { layoutToSvg } from './svg';
+import { INDENT, type Layout, clusterList, layoutDisplay, wrap } from './layout';
+import { edgePath, layoutToSvg } from './svg';
 
 const load = (name: string) => buildDisplay(readFileSync(new URL(`../../fixtures/${name}`, import.meta.url), 'utf8'), { id: name });
 
@@ -154,5 +154,40 @@ describe('wrap', () => {
     expect(wrap('S04 3-way under 12-ft Skelly (yard tap)', 20)).toEqual(['S04 3-way under', '12-ft Skelly (yard', 'tap)']);
     expect(wrap('a b c d e f g h', 3, 2)).toEqual(['a b', 'c…']);
     expect(wrap('x'.repeat(40), 10)).toEqual(['xxxxxxxxx…']);
+  });
+});
+
+describe('layout: tall (indented) for phones and upright pages', () => {
+  const { display } = load('halloween-2026.outline.txt');
+  const wide = layoutDisplay(display);
+  const tall = layoutDisplay(display, { direction: 'tall' });
+
+  it('has the same items, wires and labels as the wide layout, without overlaps', () => {
+    expect(tall.direction).toBe('tall');
+    expect(tall.nodes.map((n) => n.id).sort()).toEqual(wide.nodes.map((n) => n.id).sort());
+    expect(tall.edges.map((e) => `${e.id}:${e.label ?? ''}`).sort()).toEqual(wide.edges.map((e) => `${e.id}:${e.label ?? ''}`).sort());
+    expect(overlaps(tall)).toEqual([]);
+  });
+
+  it('puts each item under what it plugs into, one step in, in outline order', () => {
+    const byId = new Map(tall.nodes.map((n) => [n.id, n]));
+    for (const e of tall.edges.filter((e) => !e.reference)) {
+      const s = byId.get(e.source)!;
+      const t = byId.get(e.target)!;
+      expect(t.x - s.x, e.id).toBe(INDENT);
+      expect(t.y, e.id).toBeGreaterThan(s.y);
+    }
+    // Much narrower than the wide layout: it fits a phone.
+    expect(tall.width).toBeLessThan(wide.width / 2);
+  });
+
+  it('draws wires down the trunk and across, with the socket label on the trunk', () => {
+    const byId = new Map(tall.nodes.map((n) => [n.id, n]));
+    const s = byId.get('K01')!;
+    const t = byId.get('C02')!;
+    const p = edgePath(s, t, true);
+    expect(p.d).toBe(`M${s.x + 16},${s.y + s.h} V${t.y + t.h / 2} H${t.x}`);
+    expect([p.labelX, p.labelY]).toEqual([s.x + 16, t.y + t.h / 2]);
+    expect(layoutToSvg(tall, 'Halloween')).toContain('>left</text>');
   });
 });

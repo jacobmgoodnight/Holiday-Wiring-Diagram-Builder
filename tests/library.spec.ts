@@ -56,10 +56,11 @@ test('save an item as a preset, add it, autocomplete it, remove it', async ({ pa
 
 test('labels: paper sheet prints only the labels; label-maker text and CSV', async ({ page }) => {
   await load(page, halloween);
-  await menu(page, 'Cord and plug labels…');
-  const sheet = page.getByRole('dialog', { name: 'Cord and plug labels' });
+  await menu(page, 'Labels and zip ties…');
+  const sheet = page.getByRole('dialog', { name: 'Labels' });
   await expect(sheet.locator('.label').first()).toContainText('K01');
-  await expect(sheet.locator('.label', { hasText: 'K01-left → S02' })).toHaveCount(1);
+  // Cords: the same short label on both ends (the flag format prints each side twice).
+  await expect(sheet.getByLabel('Label C02 10 ft', { exact: true })).toHaveCount(2);
 
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.bar')).toBeHidden();
@@ -68,12 +69,48 @@ test('labels: paper sheet prints only the labels; label-maker text and CSV', asy
   await page.emulateMedia({ media: 'screen' });
 
   await sheet.getByLabel('Format').selectOption('maker');
-  await expect(sheet.getByLabel('Label text')).toContainText('C02: K01-left → S02 ');
+  await sheet.getByRole('checkbox', { name: 'Where it plugs in' }).check();
+  await expect(sheet.getByLabel('Label text')).toContainText('C02 10 ft · into K01 left');
   const dl = page.waitForEvent('download');
   await sheet.getByRole('button', { name: 'Download CSV for label software' }).click();
   expect((await dl).suggestedFilename()).toBe('halloween-2026-labels.csv');
   await sheet.getByRole('button', { name: 'Close labels' }).click();
   await expect(sheet).toHaveCount(0);
+});
+
+test('labels: zip ties by outlet colour and story, where lights go; marks show on install day', async ({ page }) => {
+  await load(page, '# Ties\nO01 Porch outlet\n  C01 green cord 25ft\n    L01 C9 roofline run\nO02 Garage outlet\n  L02 Wreath\n');
+  await menu(page, 'Labels and zip ties…');
+  const sheet = page.getByRole('dialog', { name: 'Labels' });
+  const prep = sheet.getByRole('status');
+  await expect(prep).toHaveText('4 labels'); // C01 (both ends), L01, L02; no ties yet
+  await expect(sheet.locator('.tie-dots')).toHaveCount(0);
+
+  // Colours: each outlet gets a different one, and you can change it.
+  await sheet.getByRole('checkbox', { name: 'A colour for each outlet' }).check();
+  await sheet.getByText(/^Set up/).click();
+  await expect(sheet.getByLabel('Zip-tie colour for O01')).toHaveValue('red');
+  await expect(sheet.getByLabel('Zip-tie colour for O02')).toHaveValue('blue');
+  await sheet.getByLabel('Zip-tie colour for O02').selectOption('white');
+  await expect(prep).toHaveText('4 labels · zip ties: 3 red, 1 white');
+
+  // Stories: the roofline goes on the second story, so it gets two ties.
+  await sheet.getByRole('checkbox', { name: /One tie per story/ }).check();
+  await sheet.getByRole('group', { name: 'Story for L01' }).getByRole('button', { name: '2' }).click();
+  await expect(prep).toHaveText('4 labels · zip ties: 4 red, 1 white');
+  await expect(sheet.getByRole('img', { name: '2 red ties' }).first()).toBeVisible();
+
+  // Where the lights go becomes their label.
+  await sheet.getByLabel('Where L01 goes').fill('Garage peak');
+  await sheet.getByLabel('Where L01 goes').press('Enter');
+  await expect(sheet.getByLabel('Label L01 Garage peak', { exact: true })).toHaveCount(1);
+  await sheet.getByRole('button', { name: 'Close labels' }).click();
+
+  // On install day the steps show the same marks, and say what goes up high.
+  await page.getByRole('button', { name: 'Install', exact: true }).click();
+  const step = page.getByRole('list', { name: 'Steps to put it up' }).locator('li', { hasText: 'L01' });
+  await expect(step).toContainText('Plug L01 C9 roofline run into C01 (2nd story).');
+  await expect(step.getByRole('img', { name: '2 red ties' })).toBeVisible();
 });
 
 test('CSV of items', async ({ page }) => {

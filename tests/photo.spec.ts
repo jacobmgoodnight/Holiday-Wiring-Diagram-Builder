@@ -341,7 +341,9 @@ test('a new photo walks you through measure, outlet, lights and plug in; looks a
   await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
   await expect.poll(async () => Math.abs((await plug.boundingBox())!.y - before.y)).toBeLessThan(3);
 
-  // Plug it in from the guide; once everything is set up the guide goes away.
+  // Plug it in from the guide (on a phone the guide steps aside while something is selected);
+  // once everything is set up the guide goes away.
+  await page.getByRole('region', { name: 'Selected L01' }).getByRole('button', { name: 'Deselect' }).click();
   await coach.getByRole('button', { name: '🔌 Plug it in' }).click();
   await page.getByRole('button', { name: 'O01 Outlet on photo' }).click();
   await expect(coach).toHaveCount(0);
@@ -461,7 +463,7 @@ test('install mode ticks items on the photo; the install sheet lists the plug-in
   await expect(sheet.locator('.install-figure img')).toBeVisible();
   await sheet.getByRole('button', { name: 'Close install sheet' }).click();
 
-  // Same ticks as the Checklist (and the outline).
+  // Same ticks as the Install tab (and the outline).
   await expectText(page, { contains: 'Inflatable [installed]' });
 });
 

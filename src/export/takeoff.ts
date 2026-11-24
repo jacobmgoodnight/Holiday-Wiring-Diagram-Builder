@@ -6,7 +6,7 @@
 import { clusterMembers } from '../diagram/layout';
 import { homeLink } from '../model/actions';
 import { MEGA_TREE_STRANDS } from '../photo/shapes';
-import { inlineFemales, isRun } from '../model/graph';
+import { inlineFemales, isRun, isStringer } from '../model/graph';
 import type { Display, DisplayNode } from '../model/types';
 import { PALETTES, areaSizeFt, areaStyle, bulbColors, bulbCount, drawnAsLights, paletteOf, runLengthFt, runStyle, spacingInOf, wiringLines } from '../photo/geometry';
 
@@ -55,9 +55,7 @@ const STYLE_NAME = { c9: 'C9/C7 light strings', mini: 'Mini light strings', icic
  * A C9 stringer is bulk wire with sockets every few inches, cut to length, with bulbs and
  * plugs bought separately; pre-made C9 strings come with bulbs and plugs on both ends.
  */
-export function isStringer(node: Pick<DisplayNode, 'category' | 'label'>): boolean {
-  return node.category === 'c9' && /\b(stringer|spool|bulk)\b/i.test(node.label);
-}
+export { isStringer };
 
 /** Common stringer spool lengths. */
 const SPOOLS_FT = [25, 50, 100, 250, 500, 1000];
